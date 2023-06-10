@@ -168,6 +168,5 @@ def test(arg_object):
     tokens = parse_pgn(pgn_source)
     if 'verbose' in arg_object:
         for token in tokens:
-            if token.kind ==
             print(token)
     return 0 if len(tokens) > 0 else 1
