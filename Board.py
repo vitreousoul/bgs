@@ -54,9 +54,9 @@ class Board:
             temp_str += '\n'
         
         if self.white_to_move:
-            temp_str += '\n\nWhite to move...'
+            temp_str += '\nWhite to move...'
         else:
-            temp_str += '\n\nBlack to move...'
+            temp_str += '\nBlack to move...'
             
         return temp_str
     
@@ -131,48 +131,60 @@ class Board:
         """
         self.fm_clock = int(split_fen[5])
             
-        def move(self, user_move):
-            # throw error for move formatting
+    def move(self, user_move):
             
-            f1 = user_move[0]
-            if f1.isalpha() and ord(f1.lower()) >= 97 and \
-                ord(f1.lower()) <= 104:
-                f1 = ord(f1.lower()) - 97
-            # else:
-                # throw error
+        # throw error for move formatting
+        if not isinstance(user_move,str):
+            print('Error: Move must be enterred as a string.')
+            return
+        elif not len(user_move) == 4:
+            print('Error: Move string must contain 4 characters.')
+            return
             
-            r1 = user_move[1]
-            if r1.isdigit() and int(r1) >= 1 and \
-                int(r1) <= 8:
-                r1 = int(r1) - 1
-            # else:
-                # throw error
+        f1 = user_move[0]
+        r1 = user_move[1]
+        f2 = user_move[2]
+        r2 = user_move[3]
+        
+        if not (f1.isalpha() and f2.isalpha() and (97 <= ord(f1.lower()) <= 104) and \
+            (97 <= ord(f2.lower()) <= 104)):
+            print('Error: Files must be a character a-h.')
+            return
             
-            f2 = user_move[2]
-            if f2.isalpha() and ord(f2.lower()) >= 97 and \
-                ord(f2.lower()) <= 104:
-                f2 = ord(f2.lower()) - 97
-            # else:
-                # throw error
+        if not (r1.isdigit() and r2.isdigit() and (1 <= int(r1) <= 8) and \
+            (1 <= int(r1) <= 8)):
+            print('Error: Ranks must be an integer 1-8.')
+            return
+        
+        """
+        Convert notation into array indices.
+        The ranks have to be flipped since the FEN lists them from the 8th down
+        """
+        f1 = ord(f1.lower()) - 97
+        f2 = ord(f2.lower()) - 97
+        r1 = -1 * (int(r1) - 1) - 1
+        r2 = -1 * (int(r2) - 1) - 1
             
-            r2 = user_move[4]
-            if user_move[3].isdigit() and int(user_move) >= 1 and \
-                int(user_move) <= 8:
-                r2 = int(r2) - 1
-            # else:
-                # throw error
+        # TODO: Validate Move
+        # If it passes the test as a valid move, execute
+        self.table_rep[r2,f2] = self.table_rep[r1,f1]
+        self.table_rep[r1,f1] = ''
+        
             
-            # TODO: Validate Move
-            # If it passes the test as a valid move, execute
-            self.table_rep[r2,f2] = self.table_rep[r1,f1]
-            self.table_rep[r1,f1] = ''
-            
-            # TODO: Update the following params accordingly
-            # - Who's move indicator
-            # - Castling rights
-            # - En Passant target
-            # - Half move counter
-            # - Full move counter
+        # TODO: Update the following params accordingly
+        # - Who's move indicator
+        # - Castling rights
+        # - En Passant target
+        # - Half move counter
+        # - Full move counter
+        
+        if self.white_to_move:
+            print('\nWhite plays ' + user_move + '.')
+        else:
+            print('\nBlack plays ' + user_move + '.')
+        
+        self.white_to_move = not self.white_to_move
+        print(self)
 
         # TODO: def generate_fen(self):
     
@@ -180,6 +192,7 @@ class Board:
         
         # TODO: def validate_move(self):
         # or generate the entire list of legal moves to compare against
+        
         
             
 """ Test of current features"""
