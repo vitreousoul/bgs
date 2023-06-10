@@ -56,7 +56,8 @@ class Board:
                 else:
                     """FEN is not properly formatted"""
             self.ascii_rep += '\n'
-            
-""" Test of current features"""
-board = Board()
-print(board)
+
+def test():
+    """ Test of current features"""
+    board = Board()
+    print(board)
