@@ -57,7 +57,8 @@ class Board:
                     """FEN is not properly formatted"""
             self.ascii_rep += '\n'
 
-def test():
+def test(arg_object):
     """ Test of current features"""
     board = Board()
     print(board)
+    return 0
