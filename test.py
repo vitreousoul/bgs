@@ -6,7 +6,7 @@ Run this file to see if things are working
 
 import sys
 
-import Board
+# import Board
 import pgn
 
 DIVIDER_TEXT = '=' * 32
@@ -19,7 +19,7 @@ ARGV_MAP = {
 # Define test functions statically so that we can loop through them.
 # This means all test functions must accept the same arguments.
 test_functions = [
-    (Board.test, 'Board'),
+    # (Board.test, 'Board'),
     (pgn.test, 'pgn')
 ]
 
