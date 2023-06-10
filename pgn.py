@@ -43,7 +43,7 @@ def tokenize_pgn(pgn_source):
         token, index = get_next_token(pgn_source, index)
         token_success = token and token.kind != TokenKind.NONE
         if token_success and index >= 0:
-            tokens.append(Token(kind=token))
+            tokens.append(token)
         else:
             error = True
             print(f"Token error!\n    token={token}\n    index={index}")
