@@ -69,6 +69,8 @@ class Board:
     See https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation
     """
     def parse_fen(self):
+        # TODO: Consider making this a list instead of a numpy array. Indexing
+        # with a[1][1]. Numpy array may be faster.
         self.table_rep = np.zeros((8,8),dtype='S1')
         split_fen = self.FEN_LOG[-1].split('/')
         split_fen[-1] = split_fen[-1].split(' ')[0]
@@ -195,18 +197,102 @@ class Board:
         self.white_to_move = not self.white_to_move
         print(self)
         
-    def validate_move(self):
+    def validate_move(self,f1,r1,f2,r2):
+        # TODO: This is temporary!
+        return True
+    
+        is_valid_move = True
         
         """
         Universal validation checks
-         - Is there a piece of that color on the start square?
-         - Is there a piece of that color on the end square?
          - Is the current player's king in check in the resulting position?'
+             - Use while loop to span out from king
          - Is the current player in check
              - If so, does this move resolve the check?
          - Except for knight and king: Does the piece run into any pieces / pawns
            en route to its final destination?
         """
+        
+        """
+        Universal validation checks
+         - These apply to all pieces
+        """
+        
+        """
+        Is there a friendly piece on the start square?
+         - If not, the move is invalid
+        Is there a friendly piece on the end square?
+         - If so, the move is invalid
+        """
+        if self.white_to_move:
+            if not (self.table_rep[r1,f1] in ["P", "R", "N", "B", "Q", "K"]):
+                is_valid_move = False
+                return is_valid_move
+            if self.table_rep[r2,f2] in ["P", "R", "N", "B", "Q", "K"]:
+                is_valid_move = False
+                return is_valid_move
+        else:
+            if not (self.table_rep[r1,f1] in ["p", "r", "n", "b", "q", "k"]):
+                is_valid_move = False
+                return is_valid_move
+            if self.table_rep[r2,f2] in ["p", "r", "n", "b", "q", "k"]:
+                is_valid_move = False
+                return is_valid_move
+            
+        """
+        Is the current player's king in check in the resulting position?'
+         - It may make sense to place this check after the others if it's
+           relatively expensive.
+        "Simulate" the resulting position and determine if the player;s king
+         is in check.'
+        """
+        
+        # Locate the current player's king
+        king_location = [-1,-1]
+        if self.white_to_move:
+            king_char = 'K'
+        else:
+            king_char = 'k'
+        
+        # TODO: Not the cleanest way to do this but should work for now
+        # Compare speed of this search to a list where we would only need one
+        # for loop and use the .index method.
+        king_located = False
+        for rank in range(8):
+            if not king_located:
+                for file in range(8):
+                    if self.table_rep[rank,file] == king_char:
+                        king_location = [rank,file]
+                        king_located = True
+                        break
+            else:
+                break
+        
+        is_check = False
+        
+        # Search for checks from bishops along the diagonals
+        if self.white_to_move:
+            friend_list = ["P", "R", "N", "B", "Q"]
+            enemy_list = ["p", "r", "n", "k"]
+        else:
+            friend_list = ["p", "r", "n", "b", "q"]
+            enemy_list = ["P", "R", "N", "K"]
+        
+        diagonals = [[1,1],[1,-1],[-1,-1],[-1,1]]
+        for i in range(4):
+            scan_location = king_location
+            scan_location[0] += diagonals[i][0]
+            scan_location[1] += diagonals[i][1]
+            while (0 <= scan_location[0] <= 7) and (0 <= scan_location[1] <= 7):
+                # If you run into your own piece or an enemy piece that is not
+                # a bishop or queen, there is no check on this diagonal.
+                if self.table_rep[scan_location[0],scan_location[1]] in friend_list \
+                or self.table_rep[scan_location[0],scan_location[1]] in enemy_list:
+                    break
+                # If you run into an enemy bishop or queen, it is check.
+                if self.table_rep[scan_location[0],scan_location[1]].lower() in ["b", "q"]:
+                    is_check = True
+                    break
         
         """
         Validate pawn move
@@ -249,7 +335,6 @@ class Board:
          - Is the move along a single rank / file?
              - If so, is the move only one square away?
         """
-        
 
         # TODO: def generate_fen(self):
     
