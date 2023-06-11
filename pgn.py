@@ -102,9 +102,22 @@ def parse_string_token(pgn_source, index):
     return token, index
 
 def parse_numeric_annotation_glyph_token(pgn_source, index):
-    # TODO: implement this
-    print("parse_numeric_annotation_glyph_token not implemented!")
-    return Token(kind=TokenKind.NONE), -1
+    # assume the dollar ($) character was matched to get to this functions, so increment index
+    index += 1
+    start_index = index
+    while True:
+        char = pgn_source[index]
+        if is_digit(char):
+            index += 1
+        else:
+            break
+    numeric_value = int(pgn_source[start_index:index]) if index > start_index else -1
+    if numeric_value >= 0 and numeric_value <= 255:
+        token = Token(kind=TokenKind.NUMERIC_ANNOTATION_GLYPH, number=numeric_value)
+        return token, index
+    else:
+        print(f"Numeric Annotation Glyph value out of range {numeric_value}")
+        return Token(kind=TokenKind.NONE), -1
 
 def parse_symbol_token(pgn_source, index):
     start_index = index
