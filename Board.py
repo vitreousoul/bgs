@@ -7,6 +7,13 @@ Bugs:
     - Not a bug but realizing that python doesn't have the concept of a private
       method. So in theory someone could call parse_fen() from the command line
       in the middle of the game even though that's not an intended functionality.'
+
+TODO Features:
+    - Move validation
+       - Accpet algebraic notation, allow castling, en passant, etc.
+       - Need a way to deal with promotion
+    - Generate FEN for each position. Ask user if they want to save the FEN
+      log and game info to a log file upon quitting
 """
 import numpy as np
 
@@ -53,11 +60,6 @@ class Board:
                     temp_str += self.table_rep[rank,file].decode("utf-8") + ' '
             temp_str += '\n'
         
-        if self.white_to_move:
-            temp_str += '\nWhite to move...'
-        else:
-            temp_str += '\nBlack to move...'
-            
         return temp_str
     
     """
@@ -159,6 +161,9 @@ class Board:
         """
         Convert notation into array indices.
         The ranks have to be flipped since the FEN lists them from the 8th down
+        
+        TODO: Right now cannot accept Algebric Notation (e4 rathan the e2e4)
+        TODO: Castling doesn't work
         """
         f1 = ord(f1.lower()) - 97
         f2 = ord(f2.lower()) - 97
@@ -167,6 +172,10 @@ class Board:
             
         # TODO: Validate Move
         # If it passes the test as a valid move, execute
+        if not self.validate_move(f1,r1,f2,r2):
+            print('Invalid move. Please try again.\n')
+            return
+        
         self.table_rep[r2,f2] = self.table_rep[r1,f1]
         self.table_rep[r1,f1] = ''
         
@@ -185,6 +194,62 @@ class Board:
         
         self.white_to_move = not self.white_to_move
         print(self)
+        
+    def validate_move(self):
+        
+        """
+        Universal validation checks
+         - Is there a piece of that color on the start square?
+         - Is there a piece of that color on the end square?
+         - Is the current player's king in check in the resulting position?'
+         - Is the current player in check
+             - If so, does this move resolve the check?
+         - Except for knight and king: Does the piece run into any pieces / pawns
+           en route to its final destination?
+        """
+        
+        """
+        Validate pawn move
+         - Is the pawn making a capture?
+             - If so, is it a 1x1 diagonal move?
+             - Is there an enemy piece/pawn on the end square?
+                 - If not, is En Passant available?
+                     - If En Passant is available remove enemy pawn from the 
+                       correct square (one in front of where the target square)
+        - Is the pawn moving forward 2 squares?
+            - If so, is it starting from the 2nd / 7th rank?
+        - Is the pawn moving forward 1 square?
+        - Else: Move is illegal
+        """
+        
+        """
+        Validate knight move
+         - Is the move an L shape?
+        """
+        
+        """
+        Validate bishop move
+         - Is the move diagonal?
+        """
+        
+        """
+        Validate rook move
+         - Is the move along a single rank / file?
+        """
+        
+        """
+        Validate queen move
+         - Is the move along a single rank / file OR diagonal?
+        """
+        
+        """
+        Validate king move
+         - Is the king moving laterally two squares?
+             - If so, does the knig have castling rights in that direction?
+         - Is the move along a single rank / file?
+             - If so, is the move only one square away?
+        """
+        
 
         # TODO: def generate_fen(self):
     
@@ -199,3 +264,15 @@ class Board:
 # board = Board('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1')
 board = Board()
 print(board)
+while True:
+    
+    if board.white_to_move:
+        user_move = input("Enter a move for White: ")
+    else:
+        user_move = input("Enter a move for Black: ")
+    
+    if user_move.lower() == 'q' or user_move.lower() == 'quit':
+        break
+    
+    board.move(user_move)
+    
