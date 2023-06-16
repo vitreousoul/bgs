@@ -268,31 +268,65 @@ class Board:
             else:
                 break
         
+        # TODO: Break is_check into its own function
         is_check = False
         
-        # Search for checks from bishops along the diagonals
+        # Search for checks along the diagonals
         if self.white_to_move:
             friend_list = ["P", "R", "N", "B", "Q"]
-            enemy_list = ["p", "r", "n", "k"]
+            enemy_list = ["r", "n", "k"]
         else:
             friend_list = ["p", "r", "n", "b", "q"]
-            enemy_list = ["P", "R", "N", "K"]
+            enemy_list = ["R", "N", "K"]
         
         diagonals = [[1,1],[1,-1],[-1,-1],[-1,1]]
         for i in range(4):
             scan_location = king_location
-            scan_location[0] += diagonals[i][0]
-            scan_location[1] += diagonals[i][1]
+            # Iterate until you hit the edge of the board
             while (0 <= scan_location[0] <= 7) and (0 <= scan_location[1] <= 7):
                 # If you run into your own piece or an enemy piece that is not
                 # a bishop or queen, there is no check on this diagonal.
-                if self.table_rep[scan_location[0],scan_location[1]] in friend_list \
-                or self.table_rep[scan_location[0],scan_location[1]] in enemy_list:
+                if self.table_rep[scan_location[0],scan_location[1]] in friend_list or \
+                    self.table_rep[scan_location[0],scan_location[1]] in enemy_list:
                     break
                 # If you run into an enemy bishop or queen, it is check.
                 if self.table_rep[scan_location[0],scan_location[1]].lower() in ["b", "q"]:
                     is_check = True
                     break
+                # If you run into an enemy pawn, the pawn has to be touching the king
+                # If you're white, the checking pawn has to be on a higher numbered rank
+                # If you're black, the checking pawn has to be on a lower numbered rank
+                if self.table_rep[scan_location[0],scan_location[1]].lower() in ['p']:
+                    if self.white_to_move and (king_location[0] - scan_location[0] == 1):
+                        is_check = True
+                    elif not self.white_to_move and (king_location[0] - scan_location[0] == -1):
+                        is_check = True 
+                
+                scan_location[0] += diagonals[i][0]
+                scan_location[1] += diagonals[i][1]
+        
+        # Search for checks along the ranks and files
+        if self.white_to_move:
+            enemy_list = ["p", "b", "k"]
+        else:
+            enemy_list = ["P", "B", "K"]
+            
+        rank_file = [[0,1],[0,-1],[1,0],[-1,0]]
+        for i in range(4):
+            scan_location = king_location
+            # Iterate until you hit the edge of the board
+            while (0 <= scan_location[0] <= 7) and (0 <= scan_location[1] <= 7):
+                # If you run into your own piece or an enemy piece that is not
+                # a rook or queen, there is no check on this diagonal.
+                if self.table_rep[scan_location[0],scan_location[1]] in friend_list or \
+                    self.table_rep[scan_location[0],scan_location[1]] in enemy_list:
+                    break
+                # If you run into an enemy rook or queen, it is check.
+                if self.table_rep[scan_location[0],scan_location[1]].lower() in ["r", "q"]:
+                    is_check = True
+                    break
+                scan_location[0] += rank_file[i][0]
+                scan_location[1] += rank_file[i][1]
         
         """
         Validate pawn move
