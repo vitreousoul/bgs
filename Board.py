@@ -14,6 +14,7 @@ TODO Features:
        - Need a way to deal with promotion
     - Generate FEN for each position. Ask user if they want to save the FEN
       log and game info to a log file upon quitting
+    - Reduce hard coded values?
 """
 import numpy as np
 
@@ -327,6 +328,28 @@ class Board:
                     break
                 scan_location[0] += rank_file[i][0]
                 scan_location[1] += rank_file[i][1]
+                
+                
+        # Search for knight checks
+        if self.white_to_move:
+            enemy_list = ["p", "r", "b", "q", "k"]
+        else:
+            enemy_list = ["P", "R", "B", "Q", "K"]
+        
+        # Shout out Bob Seger
+        knight_moves = [[2,1],[1,2],[-1,2],[-2,1],[-2,-1],[-1,-2],[1,-2],[2,-1]]
+        for i in range(8):
+            scan_location = king_location
+            scan_location[0] += rank_file[i][0]
+            scan_location[1] += rank_file[i][1]
+            
+            if self.table_rep[scan_location[0],scan_location[1]] in friend_list or \
+                self.table_rep[scan_location[0],scan_location[1]] in enemy_list:
+                break
+            # If you run into an enemy knight, it is check.
+            if self.table_rep[scan_location[0],scan_location[1]].lower() in ["n"]:
+                is_check = True
+                break
         
         """
         Validate pawn move
