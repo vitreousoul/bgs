@@ -14,11 +14,23 @@ TODO Features:
        - Need a way to deal with promotion
     - Generate FEN for each position. Ask user if they want to save the FEN
       log and game info to a log file upon quitting
+
+TODO Misc.:
     - Reduce hard coded values?
+    - Standardize documentation formatting, indenting, etc.
+    - I might want to make the board orientation of the board_state array
+      match the true board. Right now it's fliiped and it's kind of confusing.
+      Make it flip only when it's printing the board.
+    - Make the board_state a 3d array to track the board history
 """
 import numpy as np
 
 class Board:
+    
+    # Assume standard 8x8 board
+    BOARD_SIZE = 8
+    ASCII_lowA = 97
+    ASCII_lowH = 104
     
     """
     Constructor for Board class
@@ -42,7 +54,6 @@ class Board:
             # TODO: Throw error: Too many input arguments
         self.FEN_LOG = [self.START_FEN]
         
-        
         self.parse_fen()
     
     """
@@ -53,12 +64,12 @@ class Board:
     def __str__(self):
         # temp_str = self.FEN_LOG[-1] + '\n\n'
         temp_str = '\n'
-        for rank in range(8):
-            for file in range(8):
-                if len(self.table_rep[rank,file]) == 0:
+        for rank in range(self.BOARD_SIZE):
+            for file in range(self.BOARD_SIZE):
+                if len(self.board_state[rank,file]) == 0:
                     temp_str += '. '
                 else:
-                    temp_str += self.table_rep[rank,file].decode("utf-8") + ' '
+                    temp_str += self.board_state[rank,file].decode("utf-8") + ' '
             temp_str += '\n'
         
         return temp_str
@@ -66,20 +77,20 @@ class Board:
     """
     Parse FEN and generate an ASCII representation of the board
     Each board rank is separated by '/'
-     - Also creates an 8x8 table representation of the board state (table_rep)
+     - Also creates an 8x8 table representation of the board state (self.board_state)
     See https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation
     """
     def parse_fen(self):
         # TODO: Consider making this a list instead of a numpy array. Indexing
         # with a[1][1]. Numpy array may be faster.
-        self.table_rep = np.zeros((8,8),dtype='S1')
+        self.board_state = np.zeros((self.BOARD_SIZE,self.BOARD_SIZE),dtype='S1')
         split_fen = self.FEN_LOG[-1].split('/')
         split_fen[-1] = split_fen[-1].split(' ')[0]
         for i, rank in enumerate(split_fen):
             file_offset = 0
             for j, file in enumerate(rank):
                 if file.isalpha():
-                    self.table_rep[i,file_offset+j] = file
+                    self.board_state[i,file_offset+j] = file
                 elif file.isdigit():
                     file_offset += int(file)-1
                         
@@ -151,13 +162,14 @@ class Board:
         f2 = user_move[2]
         r2 = user_move[3]
         
-        if not (f1.isalpha() and f2.isalpha() and (97 <= ord(f1.lower()) <= 104) and \
-            (97 <= ord(f2.lower()) <= 104)):
+        if not (f1.isalpha() and f2.isalpha() and \
+            (self.ASCII_lowA <= ord(f1.lower()) <= self.ASCII_lowH) and \
+            (self.ASCII_lowA <= ord(f2.lower()) <= self.ASCII_lowH)):
             print('Error: Files must be a character a-h.')
             return
             
-        if not (r1.isdigit() and r2.isdigit() and (1 <= int(r1) <= 8) and \
-            (1 <= int(r1) <= 8)):
+        if not (r1.isdigit() and r2.isdigit() and (1 <= int(r1) <= self.BOARD_SIZE) and \
+            (1 <= int(r1) <= self.BOARD_SIZE)):
             print('Error: Ranks must be an integer 1-8.')
             return
         
@@ -168,8 +180,8 @@ class Board:
         TODO: Right now cannot accept Algebric Notation (e4 rathan the e2e4)
         TODO: Castling doesn't work
         """
-        f1 = ord(f1.lower()) - 97
-        f2 = ord(f2.lower()) - 97
+        f1 = ord(f1.lower()) - self.ASCII_lowA
+        f2 = ord(f2.lower()) - self.ASCII_lowA
         r1 = -1 * (int(r1) - 1) - 1
         r2 = -1 * (int(r2) - 1) - 1
             
@@ -179,8 +191,8 @@ class Board:
             print('Invalid move. Please try again.\n')
             return
         
-        self.table_rep[r2,f2] = self.table_rep[r1,f1]
-        self.table_rep[r1,f1] = ''
+        self.board_state[r2,f2] = self.board_state[r1,f1]
+        self.board_state[r1,f1] = ''
         
             
         # TODO: Update the following params accordingly
@@ -201,10 +213,9 @@ class Board:
     def validate_move(self,f1,r1,f2,r2):
         # TODO: This is temporary!
         return True
-    
-        is_valid_move = True
         
         """
+        TODO: Delete this?
         Universal validation checks
          - Is the current player's king in check in the resulting position?'
              - Use while loop to span out from king
@@ -217,7 +228,17 @@ class Board:
         """
         Universal validation checks
          - These apply to all pieces
+        
+        - Are the start and end squares on the board?
+        - Is the start square different from the end square?
+        TODO: This check may be redundant for human entered moves but we may
+           still want it to validate bot moves.
         """
+        if  not ((0 <= r1 <= (self.BOARD_SIZE - 1)) and (0 <= r1 <= (self.BOARD_SIZE - 1)) and \
+            (0 <= f1 <= (self.BOARD_SIZE - 1)) and (0 <= f1 <= (self.BOARD_SIZE - 1))):
+            return False
+        if r1 == r2 and f1 == f2:
+            return False
         
         """
         Is there a friendly piece on the start square?
@@ -226,20 +247,15 @@ class Board:
          - If so, the move is invalid
         """
         if self.white_to_move:
-            if not (self.table_rep[r1,f1] in ["P", "R", "N", "B", "Q", "K"]):
-                is_valid_move = False
-                return is_valid_move
-            if self.table_rep[r2,f2] in ["P", "R", "N", "B", "Q", "K"]:
-                is_valid_move = False
-                return is_valid_move
+            friend_list = ["P", "R", "N", "B", "Q"]
         else:
-            if not (self.table_rep[r1,f1] in ["p", "r", "n", "b", "q", "k"]):
-                is_valid_move = False
-                return is_valid_move
-            if self.table_rep[r2,f2] in ["p", "r", "n", "b", "q", "k"]:
-                is_valid_move = False
-                return is_valid_move
+            friend_list = ["p", "r", "n", "b", "q"]
             
+        if not (self.board_state[r1,f1] in friend_list):
+            return False
+        if self.board_state[r2,f2] in friend_list:
+            return False
+
         """
         Is the current player's king in check in the resulting position?'
          - It may make sense to place this check after the others if it's
@@ -259,10 +275,10 @@ class Board:
         # Compare speed of this search to a list where we would only need one
         # for loop and use the .index method.
         king_located = False
-        for rank in range(8):
+        for rank in range(self.BOARD_SIZE):
             if not king_located:
-                for file in range(8):
-                    if self.table_rep[rank,file] == king_char:
+                for file in range(self.BOARD_SIZE):
+                    if self.board_state[rank,file] == king_char:
                         king_location = [rank,file]
                         king_located = True
                         break
@@ -274,35 +290,33 @@ class Board:
         
         # Search for checks along the diagonals
         if self.white_to_move:
-            friend_list = ["P", "R", "N", "B", "Q"]
             enemy_list = ["r", "n", "k"]
         else:
-            friend_list = ["p", "r", "n", "b", "q"]
             enemy_list = ["R", "N", "K"]
         
         diagonals = [[1,1],[1,-1],[-1,-1],[-1,1]]
         for i in range(4):
             scan_location = king_location
             # Iterate until you hit the edge of the board
-            while (0 <= scan_location[0] <= 7) and (0 <= scan_location[1] <= 7):
+            while (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
+                (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)):
                 # If you run into your own piece or an enemy piece that is not
                 # a bishop or queen, there is no check on this diagonal.
-                if self.table_rep[scan_location[0],scan_location[1]] in friend_list or \
-                    self.table_rep[scan_location[0],scan_location[1]] in enemy_list:
+                if self.board_state[scan_location[0],scan_location[1]] in friend_list or \
+                    self.board_state[scan_location[0],scan_location[1]] in enemy_list:
                     break
                 # If you run into an enemy bishop or queen, it is check.
-                if self.table_rep[scan_location[0],scan_location[1]].lower() in ["b", "q"]:
+                if self.board_state[scan_location[0],scan_location[1]].lower() in ["b", "q"]:
                     is_check = True
                     break
                 # If you run into an enemy pawn, the pawn has to be touching the king
                 # If you're white, the checking pawn has to be on a higher numbered rank
                 # If you're black, the checking pawn has to be on a lower numbered rank
-                if self.table_rep[scan_location[0],scan_location[1]].lower() in ['p']:
+                if self.board_state[scan_location[0],scan_location[1]].lower() in ['p']:
                     if self.white_to_move and (king_location[0] - scan_location[0] == 1):
                         is_check = True
                     elif not self.white_to_move and (king_location[0] - scan_location[0] == -1):
                         is_check = True 
-                
                 scan_location[0] += diagonals[i][0]
                 scan_location[1] += diagonals[i][1]
         
@@ -316,14 +330,15 @@ class Board:
         for i in range(4):
             scan_location = king_location
             # Iterate until you hit the edge of the board
-            while (0 <= scan_location[0] <= 7) and (0 <= scan_location[1] <= 7):
+            while (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
+                (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)):
                 # If you run into your own piece or an enemy piece that is not
                 # a rook or queen, there is no check on this diagonal.
-                if self.table_rep[scan_location[0],scan_location[1]] in friend_list or \
-                    self.table_rep[scan_location[0],scan_location[1]] in enemy_list:
+                if self.board_state[scan_location[0],scan_location[1]] in friend_list or \
+                    self.board_state[scan_location[0],scan_location[1]] in enemy_list:
                     break
                 # If you run into an enemy rook or queen, it is check.
-                if self.table_rep[scan_location[0],scan_location[1]].lower() in ["r", "q"]:
+                if self.board_state[scan_location[0],scan_location[1]].lower() in ["r", "q"]:
                     is_check = True
                     break
                 scan_location[0] += rank_file[i][0]
@@ -338,18 +353,113 @@ class Board:
         
         # Shout out Bob Seger
         knight_moves = [[2,1],[1,2],[-1,2],[-2,1],[-2,-1],[-1,-2],[1,-2],[2,-1]]
-        for i in range(8):
+        for i in range(len(knight_moves)):
             scan_location = king_location
-            scan_location[0] += rank_file[i][0]
-            scan_location[1] += rank_file[i][1]
+            scan_location[0] += knight_moves[i][0]
+            scan_location[1] += knight_moves[i][1]
             
-            if self.table_rep[scan_location[0],scan_location[1]] in friend_list or \
-                self.table_rep[scan_location[0],scan_location[1]] in enemy_list:
+            if self.board_state[scan_location[0],scan_location[1]] in friend_list or \
+                self.board_state[scan_location[0],scan_location[1]] in enemy_list:
                 break
             # If you run into an enemy knight, it is check.
-            if self.table_rep[scan_location[0],scan_location[1]].lower() in ["n"]:
+            if self.board_state[scan_location[0],scan_location[1]].lower() in ["n"]:
                 is_check = True
                 break
+        
+        """
+        Validate knight move
+         - Is the move an L shape?
+        """
+        rank_diff = r2 - r1
+        file_diff = f2 - f1
+        if self.board_state[r1,f1].lower() == "n":
+            if not ((np.absolute(rank_diff) == 2 and np.absolute(file_diff) == 1) or \
+                (np.absolute(rank_diff) == 1 and np.absolute(file_diff) == 2)):
+                return False
+        
+        """
+        Validate non-pawn/king diagonal move
+         - Is the move diagonal?
+         - Does the bishop or queen "run into" anything?
+        """
+        if np.absolute(rank_diff) == np.absolute(file_diff):
+            if self.board_state[r1,f1].lower() in ["b", "q"]:
+                # TODO: Could probably do this in a prettier way...
+                if rank_diff > 0 and file_diff > 0:
+                    diag_indx = 1
+                elif rank_diff > 0 and file_diff < 0:
+                    diag_indx = 2
+                elif rank_diff < 0 and file_diff < 0:
+                    diag_indx = 3
+                else:
+                    # TODO: Another option shouldn't be possible at this point. Test.
+                    diag_indx = 4
+            
+                # Iterate along the rank / file and if you run into a piece / pawn
+                # en-route to your desintation, the move is invalid.
+                for square in range(rank_diff - 1):
+                    current_square = self.board_state[(r1 + diagonals(diag_indx)[0]), \
+                                                      (f1 + diagonals(diag_indx)[1])]
+                    if len(current_square) > 0:
+                        return False
+            
+        """
+        Validate non-pawn/king lateral or vertical move
+         - Is the move along a single rank / file?
+         - Does the rook or queen "run into" anything?
+        """
+        if rank_diff == 0 or file_diff == 0:
+            if self.board_state[r1,f1].lower() in ["r", "q"]:
+                # TODO: Could probably do this in a prettier way...
+                if rank_diff == 0 and file_diff > 0:
+                    rank_file_indx = 1
+                    rank_file_incr = file_diff
+                elif rank_diff == 0 and file_diff < 0:
+                    rank_file_indx = 2
+                    rank_file_incr = file_diff
+                elif rank_diff > 0 and file_diff == 0:
+                    rank_file_indx = 3
+                    rank_file_incr = rank_diff
+                else:
+                    # TODO: Another option shouldn't be possible at this point. Test.
+                    rank_file_indx = 4
+                    rank_file_incr = rank_diff
+                
+                # Iterate along the rank / file and if you run into a piece / pawn
+                # en-route to your desintation, the move is invalid.
+                for square in range(rank_file_incr - 1):
+                    current_square = self.board_state[(r1 + rank_file(rank_file_indx)[0]), \
+                                                      (f1 + rank_file(rank_file_indx)[1])]
+                    if len(current_square) > 0:
+                        return False
+        
+        """
+        Validate king move
+         - Is the king moving laterally two squares?
+             - If so, does the knig have castling rights in that direction?
+         - Is the move along a single rank / file?
+             - If so, is the move only one square away?
+        """
+        if self.board_state[r1,f1].lower() == "k":
+            # Handle castling first
+            if rank_diff == 0 and np.absolute(file_diff) == 2:
+                # If it's white to move, check castling rights
+                if self.white_to_move:
+                    if file_diff == -2 and not self.wcq:
+                        return False
+                    elif not self.wck:
+                        return False
+                # If it's black's turn to move, check castling rights
+                else:
+                    if file_diff == -2 and not self.bcq:
+                        return False
+                    elif not self.bck:
+                        return False
+                # If it makes it here, castling is allowed.
+                # If the king is trying to move more than one square (not castling),
+                #    the move is invalid.
+            elif rank_diff > 1 or file_diff > 1:
+                return False
         
         """
         Validate pawn move
@@ -361,37 +471,43 @@ class Board:
                        correct square (one in front of where the target square)
         - Is the pawn moving forward 2 squares?
             - If so, is it starting from the 2nd / 7th rank?
+            - If so, is there another piece in the way?
         - Is the pawn moving forward 1 square?
         - Else: Move is illegal
         """
-        
-        """
-        Validate knight move
-         - Is the move an L shape?
-        """
-        
-        """
-        Validate bishop move
-         - Is the move diagonal?
-        """
-        
-        """
-        Validate rook move
-         - Is the move along a single rank / file?
-        """
-        
-        """
-        Validate queen move
-         - Is the move along a single rank / file OR diagonal?
-        """
-        
-        """
-        Validate king move
-         - Is the king moving laterally two squares?
-             - If so, does the knig have castling rights in that direction?
-         - Is the move along a single rank / file?
-             - If so, is the move only one square away?
-        """
+        # Handle case where pawn is moving forward two squares
+        if rank_diff == 2 and file_diff == 0:
+            # If the pawn isn't on the starting square for the color, return false.
+            if self.white_to_move and not(r1 == 1):
+                return False
+            elif not self.white_to_move and not(r1 == self.BOARD_SIZE - 2):
+                return False
+        # Handle case where pawn in capturing (moving diagonally)
+        elif np.absolute(rank_diff) == np.absolute(file_diff):
+            # If there's a friendly piece on the square you're trying to capture,
+            #   return false.
+            if self.board_state[r2,f2] in friend_list:
+                return False
+            # If the diagonal square you're trying to move to is empty
+            elif len(self.board_state[r2,f2]) == 0:
+                # If en passant is not allowed
+                if self.ep_target == '-':
+                    return False
+                # If the en passant target sqaure doesn't match where you're
+                #   trying to go, return false.
+                elif not (self.ep_target[0] == r2 and self.ep_target[1] == f2):
+                    return False
+        # If the move is one square forward
+        elif np.absolute(rank_diff) == 1 and file_diff == 0:
+            # Make sure the move is in the correct direction corresponding to
+            #   who's move it is.        
+            if self.white_to_move and rank_diff > 0:
+                return False
+            elif not self.white_to_move and rank_diff < 0:
+                return False
+        # Any other pawn move not addressed above is invalid
+        else:
+            return False
 
         # TODO: def generate_fen(self):
     
@@ -399,4 +515,8 @@ class Board:
         
         # TODO: def validate_move(self):
         # or generate the entire list of legal moves to compare against
+        
+        # TODO: def is_check()
+        
+        # TODO: Separate module for validate move. Includes is_check, en passant, etc.
         
