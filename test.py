@@ -7,6 +7,7 @@ Run this file to see if things are working
 import sys
 
 # import Board
+import moves
 import pgn
 
 DIVIDER_TEXT = '=' * 32
@@ -20,7 +21,8 @@ ARGV_MAP = {
 # This means all test functions must accept the same arguments.
 test_functions = [
     # (Board.test, 'Board'),
-    (pgn.test, 'pgn')
+    (moves.test, 'moves'),
+    # (pgn.test, 'pgn')
 ]
 
 def test_all(arg_object):
