@@ -4,8 +4,6 @@
 Run this file to see if things are working
 """
 
-import sys
-
 # import Board
 import moves
 import pgn
@@ -22,17 +20,17 @@ ARGV_MAP = {
 test_functions = [
     # (Board.test, 'Board'),
     (moves.test, 'moves'),
-    # (pgn.test, 'pgn')
+    (pgn.test, 'pgn')
 ]
 
-def test_all(arg_object):
+def test_all(verbose=False):
     total_tests = 0
     failed_tests = 0
     # run the tests
     for test_function, test_title in test_functions:
         print(f"Testing {test_title}...")
         total_tests += 1
-        failure_code = test_function(arg_object)
+        failure_code = test_function(verbose)
         if failure_code:
             print(f"Error in test {test_title} with code {failure_code}")
             failed_tests += 1
@@ -45,10 +43,5 @@ def test_all(arg_object):
     print(DIVIDER_TEXT)
 
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    arg_object = {}
     # quick and dirty arg parsing for setting basic flags
-    for arg in args:
-        if (ARGV_MAP[arg]):
-            arg_object[ARGV_MAP[arg]] = True
-    test_all(arg_object)
+    test_all(False)

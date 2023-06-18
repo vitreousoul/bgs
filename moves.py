@@ -185,7 +185,7 @@ def get_possible_moves(game_state):
                 possible_moves += get_possible_moves_from_table(move_tables['king'],   piece_value, square_index)
     return possible_moves
 
-def test(arg_object):
+def test(verbose):
     result_code = 0
     game_state = {
         'en_passant': -1,
@@ -205,6 +205,6 @@ def test(arg_object):
         ]
     }
     possible_moves = get_possible_moves(game_state)
-    if 'verbose' in arg_object:
+    if verbose:
         print(possible_moves)
     return result_code
