@@ -239,11 +239,11 @@ def is_alpha(char):
 def is_alphanum(char):
     return is_alpha(char) or is_digit(char)
 
-def test(arg_object):
+def test(verbose):
     pgn_file = open('./assets/1992_11_04_fischer_spassky.pgn', 'r')
     pgn_source = pgn_file.read()
     pgn_file.close()
     pgn_result, result_code = parse_pgn(pgn_source)
-    if 'verbose' in arg_object:
+    if verbose:
         print(pgn_result)
     return result_code
