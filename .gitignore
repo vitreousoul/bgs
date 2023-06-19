@@ -162,3 +162,5 @@ cython_debug/
 # c stuff
 *.dSYM/
 *.out
+*.exe
+*.o
