@@ -135,8 +135,10 @@ static int UpdateBoardState(PyObject *Board)
     return Result;
 }
 
-static void DrawBoard()
+static void DrawBoard(Vector2 MousePosition)
 {
+    int MouseX = MousePosition.x;
+    int MouseY = MousePosition.y;
     int Padding = 40;
     int SquareSizeInPixels = (SCREEN_HEIGHT - (2 * Padding)) / 8;
     int Row, Col;
@@ -151,6 +153,13 @@ static void DrawBoard()
             int X = (Col * SquareSizeInPixels) + Padding;
             int Y = (Row * SquareSizeInPixels) + Padding;
             DrawRectangle(X, Y, SquareSizeInPixels, SquareSizeInPixels, SquareColor);
+            int MouseInBoundsX = MouseX >= X && MouseX < X + SquareSizeInPixels;
+            int MouseInBoundsY = MouseY >= Y && MouseY < Y + SquareSizeInPixels;
+            if (MouseInBoundsX && MouseInBoundsY)
+            {
+                // draw outline of square if the mouse position is inside the square
+                DrawRectangleLines(X, Y, SquareSizeInPixels, SquareSizeInPixels, BLACK);
+            }
         }
     }
 }
@@ -167,9 +176,10 @@ int main(int argc, char **argv)
     SetTargetFPS(TARGET_FPS);
     while (!WindowShouldClose())
     {
+        Vector2 MousePosition = GetMousePosition();
         BeginDrawing();
         ClearBackground(RAYWHITE);
-        DrawBoard();
+        DrawBoard(MousePosition);
         EndDrawing();
     }
     CloseWindow();
