@@ -13,6 +13,7 @@ const int TARGET_FPS = 30;
 #define BOARD_SIZE 8
 
 double BOARD[BOARD_SIZE][BOARD_SIZE];
+Vector2 ACTIVE_PIECE = {-1, -1};
 
 Color PIECE_COLOR[255] = {
   ['p'] = { 200, 60, 60, 255 },
@@ -159,6 +160,16 @@ static void DrawBoard(Vector2 MousePosition)
             {
                 // draw outline of square if the mouse position is inside the square
                 DrawRectangleLines(X, Y, SquareSizeInPixels, SquareSizeInPixels, BLACK);
+                if (IsMouseButtonPressed(0))
+                {
+                    ACTIVE_PIECE.x = X;
+                    ACTIVE_PIECE.y = Y;
+                }
+            }
+            if (ACTIVE_PIECE.x == X && ACTIVE_PIECE.y == Y)
+            {
+                DrawRectangle(X, Y, SquareSizeInPixels, SquareSizeInPixels, (Color){85,85,85,99});
+                DrawRectangleLines(X, Y, SquareSizeInPixels, SquareSizeInPixels, (Color){20,20,20,255});
             }
         }
     }
