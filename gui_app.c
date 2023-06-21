@@ -6,14 +6,18 @@
 // NOTE: https://www.raylib.com/
 #include "./clibs/raylib.h"
 
+#include "./gui_app.h"
+
 const int SCREEN_WIDTH = 960;
 const int SCREEN_HEIGHT = 540;
 const int TARGET_FPS = 30;
 
 #define BOARD_SIZE 8
+#define BOARD_PADDING 40
+const int SQUARE_SIZE_IN_PIXELS = (SCREEN_HEIGHT - (2 * BOARD_PADDING)) / 8;
 
 double BOARD[BOARD_SIZE][BOARD_SIZE];
-Vector2 ACTIVE_PIECE = {-1, -1};
+app_state APP_STATE;
 
 Color PIECE_COLOR[255] = {
   ['p'] = { 200, 60, 60, 255 },
@@ -95,6 +99,17 @@ static PyObject *InitBoard()
     return BoardInitResult;
 }
 
+static void InitAppState()
+{
+    APP_STATE.MousePosition.x = -1;
+    APP_STATE.MousePosition.y = -1;
+    APP_STATE.MousePrimaryDown = 0;
+    APP_STATE.HoverSquare.X = -1;
+    APP_STATE.HoverSquare.Y = -1;
+    APP_STATE.SelectedSquare.X = -1;
+    APP_STATE.SelectedSquare.Y = -1;
+}
+
 static void SetSquareValue(int RowIndex, int ColIndex, double Value)
 {
     if (RowIndex >= 0 && RowIndex < BOARD_SIZE && ColIndex >= 0 && ColIndex < BOARD_SIZE)
@@ -136,12 +151,42 @@ static int UpdateBoardState(PyObject *Board)
     return Result;
 }
 
-static void DrawBoard(Vector2 MousePosition)
+static int PositionInsideBoard(Vector2 Position)
 {
-    int MouseX = MousePosition.x;
-    int MouseY = MousePosition.y;
-    int Padding = 40;
-    int SquareSizeInPixels = (SCREEN_HEIGHT - (2 * Padding)) / 8;
+    return (Position.x >= 0.0f && Position.x <= BOARD_SIZE &&
+            Position.y >= 0.0f && Position.y <= BOARD_SIZE);
+}
+
+static Vector2 PositionToSquarePosition(Vector2 Position)
+{
+    Vector2 Result;
+    Vector2 OffsetPosition;
+    OffsetPosition.x = (Position.x - BOARD_PADDING) / SQUARE_SIZE_IN_PIXELS;
+    OffsetPosition.y = (Position.y - BOARD_PADDING) / SQUARE_SIZE_IN_PIXELS;
+    if(PositionInsideBoard(OffsetPosition))
+    {
+        Result.x = OffsetPosition.x;
+        Result.y = OffsetPosition.y;
+    }
+    else
+    {
+        Result.x = -1;
+        Result.y = -1;
+    }
+    return Result;
+}
+
+static void UpdateInput()
+{
+    APP_STATE.MousePosition = GetMousePosition();
+    APP_STATE.MousePrimaryDown = IsMouseButtonPressed(0);
+    Vector2 MouseSquarePosition = PositionToSquarePosition(APP_STATE.MousePosition);
+    APP_STATE.HoverSquare.X = (int)MouseSquarePosition.x;
+    APP_STATE.HoverSquare.Y = (int)MouseSquarePosition.y;
+}
+
+static void DrawBoard()
+{
     int Row, Col;
     for (Row = 0; Row < BOARD_SIZE; ++Row)
     {
@@ -151,25 +196,23 @@ static void DrawBoard(Vector2 MousePosition)
             // truncate float value and treat as ASCII value, we may want to be more careful about this
             int ColorIndex = (int)SquareFloatValue;
             Color SquareColor = PIECE_COLOR[ColorIndex];
-            int X = (Col * SquareSizeInPixels) + Padding;
-            int Y = (Row * SquareSizeInPixels) + Padding;
-            DrawRectangle(X, Y, SquareSizeInPixels, SquareSizeInPixels, SquareColor);
-            int MouseInBoundsX = MouseX >= X && MouseX < X + SquareSizeInPixels;
-            int MouseInBoundsY = MouseY >= Y && MouseY < Y + SquareSizeInPixels;
-            if (MouseInBoundsX && MouseInBoundsY)
+            int X = (Col * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
+            int Y = (Row * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
+            DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColor);
+            if (APP_STATE.HoverSquare.X == Col && APP_STATE.HoverSquare.Y == Row)
             {
                 // draw outline of square if the mouse position is inside the square
-                DrawRectangleLines(X, Y, SquareSizeInPixels, SquareSizeInPixels, BLACK);
-                if (IsMouseButtonPressed(0))
+                DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, BLACK);
+                if (APP_STATE.MousePrimaryDown)
                 {
-                    ACTIVE_PIECE.x = X;
-                    ACTIVE_PIECE.y = Y;
+                    APP_STATE.SelectedSquare.X = X;
+                    APP_STATE.SelectedSquare.Y = Y;
                 }
             }
-            if (ACTIVE_PIECE.x == X && ACTIVE_PIECE.y == Y)
+            if (APP_STATE.SelectedSquare.X == X && APP_STATE.SelectedSquare.Y == Y)
             {
-                DrawRectangle(X, Y, SquareSizeInPixels, SquareSizeInPixels, (Color){85,85,85,99});
-                DrawRectangleLines(X, Y, SquareSizeInPixels, SquareSizeInPixels, (Color){20,20,20,255});
+                DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, (Color){85,85,85,99});
+                DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, (Color){20,20,20,255});
             }
         }
     }
@@ -177,6 +220,7 @@ static void DrawBoard(Vector2 MousePosition)
 
 int main(int argc, char **argv)
 {
+    InitAppState();
     int InitStatus = InitPython(argc, argv);
     if (InitStatus) return ErrorMessageAndCode("Error initing python!\n", InitStatus);
     PyObject *Board = InitBoard();
@@ -187,10 +231,10 @@ int main(int argc, char **argv)
     SetTargetFPS(TARGET_FPS);
     while (!WindowShouldClose())
     {
-        Vector2 MousePosition = GetMousePosition();
+        UpdateInput();
         BeginDrawing();
         ClearBackground(RAYWHITE);
-        DrawBoard(MousePosition);
+        DrawBoard();
         EndDrawing();
     }
     CloseWindow();
