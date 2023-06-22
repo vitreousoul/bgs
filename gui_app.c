@@ -18,6 +18,8 @@ const int SQUARE_SIZE_IN_PIXELS = (SCREEN_HEIGHT - (2 * BOARD_PADDING)) / 8;
 
 const Color DARK_SQUARE_COLOR = {68,100,66,255};
 const Color LIGHT_SQUARE_COLOR = {128,208,140,255};
+const Color SELECTED_SQUARE_COLOR = {105,85,205,59};
+const Color SELECTED_SQUARE_OUTLINE_COLOR = {100,20,100,255};
 
 double BOARD[BOARD_SIZE][BOARD_SIZE];
 app_state APP_STATE;
@@ -223,7 +225,7 @@ static void DrawBoard()
             if (PIECE_EXISTS[SquareIntValue] && IsTextureReady(APP_STATE.ChessPieceTexture))
             {
                 ivec2 PieceTextureOffset = PIECE_TEXTURE_OFFSET[SquareIntValue];
-                Color Tint = {255,255,255,255};
+                Color Tint = {255,212,255,255};
                 Vector2 Origin = {0,0};
                 Rectangle Source, Dest;
                 Source.x = PieceTextureOffset.X;
@@ -248,8 +250,8 @@ static void DrawBoard()
             }
             if (APP_STATE.SelectedSquare.X == X && APP_STATE.SelectedSquare.Y == Y)
             {
-                DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, (Color){85,85,85,99});
-                DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, (Color){20,20,20,255});
+                DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SELECTED_SQUARE_COLOR);
+                DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SELECTED_SQUARE_OUTLINE_COLOR);
             }
         }
     }
