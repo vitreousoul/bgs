@@ -10,4 +10,5 @@ typedef struct
     int MousePrimaryDown;
     ivec2 HoverSquare;
     ivec2 SelectedSquare;
+    Texture2D ChessPieceTexture;
 } app_state;

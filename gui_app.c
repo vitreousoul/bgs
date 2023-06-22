@@ -16,22 +16,42 @@ const int TARGET_FPS = 30;
 #define BOARD_PADDING 40
 const int SQUARE_SIZE_IN_PIXELS = (SCREEN_HEIGHT - (2 * BOARD_PADDING)) / 8;
 
+const Color DARK_SQUARE_COLOR = {68,100,66,255};
+const Color LIGHT_SQUARE_COLOR = {128,208,140,255};
+
 double BOARD[BOARD_SIZE][BOARD_SIZE];
 app_state APP_STATE;
 
-Color PIECE_COLOR[255] = {
-  ['p'] = { 200, 60, 60, 255 },
-  ['P'] = { 250, 90, 90, 255 },
-  ['k'] = { 90, 250, 90, 255 },
-  ['K'] = { 60, 200, 60, 255 },
-  ['q'] = { 90, 90, 250, 255 },
-  ['Q'] = { 60, 60, 200, 255 },
-  ['b'] = { 90, 250, 250, 255 },
-  ['B'] = { 60, 200, 200, 255 },
-  ['n'] = { 250, 250, 90, 255 },
-  ['N'] = { 200, 200, 60, 255 },
-  ['r'] = { 250, 90, 250, 255 },
-  ['R'] = { 200, 60, 200, 255 },
+#define PIECE_TEXTURE_SIZE 120
+
+ivec2 PIECE_TEXTURE_OFFSET[255] = {
+  ['p'] = {4,0},
+  ['P'] = {4,PIECE_TEXTURE_SIZE+8},
+  ['n'] = {PIECE_TEXTURE_SIZE+12,0},
+  ['N'] = {PIECE_TEXTURE_SIZE+12,PIECE_TEXTURE_SIZE+8},
+  ['b'] = {2*PIECE_TEXTURE_SIZE+20,0},
+  ['B'] = {2*PIECE_TEXTURE_SIZE+20,PIECE_TEXTURE_SIZE+8},
+  ['r'] = {3*PIECE_TEXTURE_SIZE+28,0},
+  ['R'] = {3*PIECE_TEXTURE_SIZE+28,PIECE_TEXTURE_SIZE+8},
+  ['q'] = {4*PIECE_TEXTURE_SIZE+36,0},
+  ['Q'] = {4*PIECE_TEXTURE_SIZE+36,PIECE_TEXTURE_SIZE+8},
+  ['k'] = {5*PIECE_TEXTURE_SIZE+44,0},
+  ['K'] = {5*PIECE_TEXTURE_SIZE+44,PIECE_TEXTURE_SIZE+8},
+};
+
+int PIECE_EXISTS[255] = {
+  ['p'] = 1,
+  ['P'] = 1,
+  ['k'] = 1,
+  ['K'] = 1,
+  ['q'] = 1,
+  ['Q'] = 1,
+  ['b'] = 1,
+  ['B'] = 1,
+  ['n'] = 1,
+  ['N'] = 1,
+  ['r'] = 1,
+  ['R'] = 1,
 };
 
 static int ErrorMessageAndCode(const char *message, int code)
@@ -108,6 +128,7 @@ static void InitAppState()
     APP_STATE.HoverSquare.Y = -1;
     APP_STATE.SelectedSquare.X = -1;
     APP_STATE.SelectedSquare.Y = -1;
+    APP_STATE.ChessPieceTexture = LoadTexture("./assets/chess_pieces.png");
 }
 
 static void SetSquareValue(int RowIndex, int ColIndex, double Value)
@@ -193,12 +214,28 @@ static void DrawBoard()
         for (Col = 0; Col < BOARD_SIZE; ++Col)
         {
             double SquareFloatValue = BOARD[Row][Col] > 0.0f ? BOARD[Row][Col] : 0.0f;
-            // truncate float value and treat as ASCII value, we may want to be more careful about this
-            int ColorIndex = (int)SquareFloatValue;
-            Color SquareColor = PIECE_COLOR[ColorIndex];
+            int SquareIntValue = (int)SquareFloatValue;
             int X = (Col * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
             int Y = (Row * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
+            int IsDarkSquare = (X % 2) != (Y % 2);
+            Color SquareColor = IsDarkSquare ? DARK_SQUARE_COLOR : LIGHT_SQUARE_COLOR;
             DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColor);
+            if (PIECE_EXISTS[SquareIntValue] && IsTextureReady(APP_STATE.ChessPieceTexture))
+            {
+                ivec2 PieceTextureOffset = PIECE_TEXTURE_OFFSET[SquareIntValue];
+                Color Tint = {255,255,255,255};
+                Vector2 Origin = {0,0};
+                Rectangle Source, Dest;
+                Source.x = PieceTextureOffset.X;
+                Source.y = PieceTextureOffset.Y;
+                Source.width = PIECE_TEXTURE_SIZE;
+                Source.height = PIECE_TEXTURE_SIZE;
+                Dest.x = X;
+                Dest.y = Y;
+                Dest.width = SQUARE_SIZE_IN_PIXELS;
+                Dest.height = SQUARE_SIZE_IN_PIXELS;
+                DrawTexturePro(APP_STATE.ChessPieceTexture, Source, Dest, Origin, 0.0f, Tint);
+            }
             if (APP_STATE.HoverSquare.X == Col && APP_STATE.HoverSquare.Y == Row)
             {
                 // draw outline of square if the mouse position is inside the square
@@ -220,7 +257,6 @@ static void DrawBoard()
 
 int main(int argc, char **argv)
 {
-    InitAppState();
     int InitStatus = InitPython(argc, argv);
     if (InitStatus) return ErrorMessageAndCode("Error initing python!\n", InitStatus);
     PyObject *Board = InitBoard();
@@ -229,6 +265,7 @@ int main(int argc, char **argv)
     if (BoardStateCode) return ErrorMessageAndCode("Error getting board-state!\n", BoardStateCode);
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "bgs gui");
     SetTargetFPS(TARGET_FPS);
+    InitAppState();
     while (!WindowShouldClose())
     {
         UpdateInput();
