@@ -8,6 +8,9 @@
 
 #include "./gui_app.h"
 
+PyObject *DebugBoardClass = 0; // should we just have globals of stuff we expect to use?
+PyObject *Board = 0;
+
 const int SCREEN_WIDTH = 960;
 const int SCREEN_HEIGHT = 540;
 const int TARGET_FPS = 30;
@@ -26,35 +29,44 @@ app_state APP_STATE;
 
 #define PIECE_TEXTURE_SIZE 120
 
+// TODO: RANK_TABLE is in reverse because the y-axis is flipped, we should probably just fix our coordinate system......
+char RANK_TABLE[8] = {'8','7','6','5','4','3','2','1'};
+char FILE_TABLE[8] = {'a','b','c','d','e','f','g','h'};
+
 ivec2 PIECE_TEXTURE_OFFSET[255] = {
-  ['p'] = {4,0},
-  ['P'] = {4,PIECE_TEXTURE_SIZE+8},
-  ['n'] = {PIECE_TEXTURE_SIZE+12,0},
-  ['N'] = {PIECE_TEXTURE_SIZE+12,PIECE_TEXTURE_SIZE+8},
-  ['b'] = {2*PIECE_TEXTURE_SIZE+20,0},
-  ['B'] = {2*PIECE_TEXTURE_SIZE+20,PIECE_TEXTURE_SIZE+8},
-  ['r'] = {3*PIECE_TEXTURE_SIZE+28,0},
-  ['R'] = {3*PIECE_TEXTURE_SIZE+28,PIECE_TEXTURE_SIZE+8},
-  ['q'] = {4*PIECE_TEXTURE_SIZE+36,0},
-  ['Q'] = {4*PIECE_TEXTURE_SIZE+36,PIECE_TEXTURE_SIZE+8},
-  ['k'] = {5*PIECE_TEXTURE_SIZE+44,0},
-  ['K'] = {5*PIECE_TEXTURE_SIZE+44,PIECE_TEXTURE_SIZE+8},
+    ['p'] = {4,0},
+    ['P'] = {4,PIECE_TEXTURE_SIZE+8},
+    ['n'] = {PIECE_TEXTURE_SIZE+12,0},
+    ['N'] = {PIECE_TEXTURE_SIZE+12,PIECE_TEXTURE_SIZE+8},
+    ['b'] = {2*PIECE_TEXTURE_SIZE+20,0},
+    ['B'] = {2*PIECE_TEXTURE_SIZE+20,PIECE_TEXTURE_SIZE+8},
+    ['r'] = {3*PIECE_TEXTURE_SIZE+28,0},
+    ['R'] = {3*PIECE_TEXTURE_SIZE+28,PIECE_TEXTURE_SIZE+8},
+    ['q'] = {4*PIECE_TEXTURE_SIZE+36,0},
+    ['Q'] = {4*PIECE_TEXTURE_SIZE+36,PIECE_TEXTURE_SIZE+8},
+    ['k'] = {5*PIECE_TEXTURE_SIZE+44,0},
+    ['K'] = {5*PIECE_TEXTURE_SIZE+44,PIECE_TEXTURE_SIZE+8},
 };
 
 int PIECE_EXISTS[255] = {
-  ['p'] = 1,
-  ['P'] = 1,
-  ['k'] = 1,
-  ['K'] = 1,
-  ['q'] = 1,
-  ['Q'] = 1,
-  ['b'] = 1,
-  ['B'] = 1,
-  ['n'] = 1,
-  ['N'] = 1,
-  ['r'] = 1,
-  ['R'] = 1,
+    ['p'] = 1,
+    ['P'] = 1,
+    ['k'] = 1,
+    ['K'] = 1,
+    ['q'] = 1,
+    ['Q'] = 1,
+    ['b'] = 1,
+    ['B'] = 1,
+    ['n'] = 1,
+    ['N'] = 1,
+    ['r'] = 1,
+    ['R'] = 1,
 };
+
+static void DecRef(PyObject *Object)
+{
+    if (Object) Py_DECREF(Object);
+}
 
 static int ErrorMessageAndCode(const char *message, int code)
 {
@@ -116,6 +128,7 @@ static PyObject *InitBoard()
     if (!BoardModule) return ErrorMessageAndPyObject("Error initing board module\n", 0);
     PyObject *BoardClass = PyObject_GetAttrString(BoardModule, "Board");
     if (!BoardClass || !PyCallable_Check(BoardClass)) return ErrorMessageAndPyObject("BoardClass not callable\n", 0);
+    DebugBoardClass = BoardClass;
     PyObject *BoardInitResult = PyObject_CallNoArgs(BoardClass);
     if (!BoardInitResult) return ErrorMessageAndPyObject("Board init failed\n", 0);
     return BoardInitResult;
@@ -130,12 +143,19 @@ static void InitAppState()
     APP_STATE.HoverSquare.Y = -1;
     APP_STATE.SelectedSquare.X = -1;
     APP_STATE.SelectedSquare.Y = -1;
+    APP_STATE.MoveSquare.X = -1;
+    APP_STATE.MoveSquare.Y = -1;
     APP_STATE.ChessPieceTexture = LoadTexture("./assets/chess_pieces.png");
+}
+
+static int SquareValueOnBoard(int X, int Y)
+{
+    return X >= 0 && X < BOARD_SIZE && Y >= 0 && Y < BOARD_SIZE;
 }
 
 static void SetSquareValue(int RowIndex, int ColIndex, double Value)
 {
-    if (RowIndex >= 0 && RowIndex < BOARD_SIZE && ColIndex >= 0 && ColIndex < BOARD_SIZE)
+    if (SquareValueOnBoard(ColIndex, RowIndex))
     {
         BOARD[RowIndex][ColIndex] = Value;
     }
@@ -166,11 +186,15 @@ static int UpdateBoardState(PyObject *Board)
                         PyObject *SquareValue = PySequence_GetItem(Value, 0);
                         double SquareValueAsDouble = SquareValue ? PyFloat_AsDouble(SquareValue) : -1.0f;
                         SetSquareValue(RowIndex, ColIndex, SquareValueAsDouble);
+                        DecRef(SquareValue);
                     }
+                    DecRef(Value);
                 }
             }
+            DecRef(Row);
         }
     }
+    DecRef(BoardState);
     return Result;
 }
 
@@ -206,6 +230,54 @@ static void UpdateInput()
     Vector2 MouseSquarePosition = PositionToSquarePosition(APP_STATE.MousePosition);
     APP_STATE.HoverSquare.X = (int)MouseSquarePosition.x;
     APP_STATE.HoverSquare.Y = (int)MouseSquarePosition.y;
+    int OnBoard = SquareValueOnBoard(APP_STATE.HoverSquare.X, APP_STATE.HoverSquare.Y);
+    if (APP_STATE.MousePrimaryDown && OnBoard)
+    {
+        if (APP_STATE.SelectedSquare.X == -1 && APP_STATE.SelectedSquare.Y == -1)
+        {
+            printf("Selected Square %d %d\n", APP_STATE.HoverSquare.X, APP_STATE.HoverSquare.Y);
+            APP_STATE.SelectedSquare.X = APP_STATE.HoverSquare.X;
+            APP_STATE.SelectedSquare.Y = APP_STATE.HoverSquare.Y;
+        }
+        else if (APP_STATE.SelectedSquare.X != APP_STATE.HoverSquare.X ||
+                 APP_STATE.SelectedSquare.Y != APP_STATE.HoverSquare.Y)
+        {
+            APP_STATE.MoveSquare.X = APP_STATE.HoverSquare.X;
+            APP_STATE.MoveSquare.Y = APP_STATE.HoverSquare.Y;
+        }
+    }
+}
+
+static int MakeMove(PyObject *Board, char *Move)
+{
+    PyObject *MoveMethod = PyObject_GetAttrString(DebugBoardClass, "move");
+    if (!MoveMethod) return ErrorMessageAndCode("null MoveMethod\n", 0);
+    if (!PyCallable_Check(MoveMethod)) return ErrorMessageAndCode("MoveMethod not callable\n", 1);
+    PyObject *ArgValue = PyUnicode_FromString(Move);
+    PyObject *Args = PyTuple_Pack(2, Board, ArgValue);
+    PyObject *MoveResult = PyObject_CallObject(MoveMethod, Args);
+    DecRef(MoveMethod);
+    return 0;
+}
+
+static void HandleMove(PyObject *Board)
+{
+    int HasSelectedSquare = APP_STATE.SelectedSquare.X >= 0 && APP_STATE.SelectedSquare.Y >= 0;
+    int HasMoveSquare = APP_STATE.MoveSquare.X >= 0 && APP_STATE.MoveSquare.Y >= 0;
+    if (HasSelectedSquare && HasMoveSquare)
+    {
+        char MoveString[4] = {
+            FILE_TABLE[APP_STATE.SelectedSquare.X],
+            RANK_TABLE[APP_STATE.SelectedSquare.Y],
+            FILE_TABLE[APP_STATE.MoveSquare.X],
+            RANK_TABLE[APP_STATE.MoveSquare.Y],
+        };
+        MakeMove(Board, MoveString);
+        APP_STATE.SelectedSquare.X = -1;
+        APP_STATE.SelectedSquare.Y = -1;
+        APP_STATE.MoveSquare.X = -1;
+        APP_STATE.MoveSquare.Y = -1;
+    }
 }
 
 static void DrawBoard()
@@ -242,13 +314,8 @@ static void DrawBoard()
             {
                 // draw outline of square if the mouse position is inside the square
                 DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, BLACK);
-                if (APP_STATE.MousePrimaryDown)
-                {
-                    APP_STATE.SelectedSquare.X = X;
-                    APP_STATE.SelectedSquare.Y = Y;
-                }
             }
-            if (APP_STATE.SelectedSquare.X == X && APP_STATE.SelectedSquare.Y == Y)
+            if (APP_STATE.SelectedSquare.X == Col && APP_STATE.SelectedSquare.Y == Row)
             {
                 DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SELECTED_SQUARE_COLOR);
                 DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SELECTED_SQUARE_OUTLINE_COLOR);
@@ -271,6 +338,8 @@ int main(int argc, char **argv)
     while (!WindowShouldClose())
     {
         UpdateInput();
+        HandleMove(Board);
+        UpdateBoardState(Board);
         BeginDrawing();
         ClearBackground(RAYWHITE);
         DrawBoard();
