@@ -80,6 +80,11 @@ static PyObject *ErrorMessageAndPyObject(const char *message, PyObject *object)
     return object;
 }
 
+static int IVec2Equal(ivec2 A, ivec2 B)
+{
+    return A.X == B.X && A.Y == B.Y;
+}
+
 static int InitPython(int argc, char **argv)
 {
     /* copy-paste config stuff from docs */
@@ -136,15 +141,11 @@ static PyObject *InitBoard()
 
 static void InitAppState()
 {
-    APP_STATE.MousePosition.x = -1;
-    APP_STATE.MousePosition.y = -1;
+    APP_STATE.MousePosition = (Vector2){-1,-1};
     APP_STATE.MousePrimaryDown = 0;
-    APP_STATE.HoverSquare.X = -1;
-    APP_STATE.HoverSquare.Y = -1;
-    APP_STATE.SelectedSquare.X = -1;
-    APP_STATE.SelectedSquare.Y = -1;
-    APP_STATE.MoveSquare.X = -1;
-    APP_STATE.MoveSquare.Y = -1;
+    APP_STATE.HoverSquare = (ivec2){-1,-1};
+    APP_STATE.SelectedSquare = (ivec2){-1,-1};
+    APP_STATE.MoveSquare = (ivec2){-1,-1};
     APP_STATE.ChessPieceTexture = LoadTexture("./assets/chess_pieces.png");
 }
 
@@ -212,13 +213,11 @@ static Vector2 PositionToSquarePosition(Vector2 Position)
     OffsetPosition.y = (Position.y - BOARD_PADDING) / SQUARE_SIZE_IN_PIXELS;
     if(PositionInsideBoard(OffsetPosition))
     {
-        Result.x = OffsetPosition.x;
-        Result.y = OffsetPosition.y;
+        Result = (Vector2){OffsetPosition.x, OffsetPosition.y};
     }
     else
     {
-        Result.x = -1;
-        Result.y = -1;
+        Result = (Vector2){-1,-1};
     }
     return Result;
 }
@@ -228,22 +227,18 @@ static void UpdateInput()
     APP_STATE.MousePosition = GetMousePosition();
     APP_STATE.MousePrimaryDown = IsMouseButtonPressed(0);
     Vector2 MouseSquarePosition = PositionToSquarePosition(APP_STATE.MousePosition);
-    APP_STATE.HoverSquare.X = (int)MouseSquarePosition.x;
-    APP_STATE.HoverSquare.Y = (int)MouseSquarePosition.y;
+    APP_STATE.HoverSquare = (ivec2){(int)MouseSquarePosition.x, (int)MouseSquarePosition.y};
     int OnBoard = SquareValueOnBoard(APP_STATE.HoverSquare.X, APP_STATE.HoverSquare.Y);
     if (APP_STATE.MousePrimaryDown && OnBoard)
     {
         if (APP_STATE.SelectedSquare.X == -1 && APP_STATE.SelectedSquare.Y == -1)
         {
             printf("Selected Square %d %d\n", APP_STATE.HoverSquare.X, APP_STATE.HoverSquare.Y);
-            APP_STATE.SelectedSquare.X = APP_STATE.HoverSquare.X;
-            APP_STATE.SelectedSquare.Y = APP_STATE.HoverSquare.Y;
+            APP_STATE.SelectedSquare = (ivec2){APP_STATE.HoverSquare.X, APP_STATE.HoverSquare.Y};
         }
-        else if (APP_STATE.SelectedSquare.X != APP_STATE.HoverSquare.X ||
-                 APP_STATE.SelectedSquare.Y != APP_STATE.HoverSquare.Y)
+        else if (!IVec2Equal(APP_STATE.SelectedSquare, APP_STATE.HoverSquare))
         {
-            APP_STATE.MoveSquare.X = APP_STATE.HoverSquare.X;
-            APP_STATE.MoveSquare.Y = APP_STATE.HoverSquare.Y;
+            APP_STATE.MoveSquare = (ivec2){APP_STATE.HoverSquare.X, APP_STATE.HoverSquare.Y};
         }
     }
 }
@@ -273,10 +268,8 @@ static void HandleMove(PyObject *Board)
             RANK_TABLE[APP_STATE.MoveSquare.Y],
         };
         MakeMove(Board, MoveString);
-        APP_STATE.SelectedSquare.X = -1;
-        APP_STATE.SelectedSquare.Y = -1;
-        APP_STATE.MoveSquare.X = -1;
-        APP_STATE.MoveSquare.Y = -1;
+        APP_STATE.SelectedSquare = (ivec2){-1,-1};
+        APP_STATE.MoveSquare = (ivec2){-1,-1};
     }
 }
 
@@ -300,14 +293,8 @@ static void DrawBoard()
                 Color Tint = {255,212,255,255};
                 Vector2 Origin = {0,0};
                 Rectangle Source, Dest;
-                Source.x = PieceTextureOffset.X;
-                Source.y = PieceTextureOffset.Y;
-                Source.width = PIECE_TEXTURE_SIZE;
-                Source.height = PIECE_TEXTURE_SIZE;
-                Dest.x = X;
-                Dest.y = Y;
-                Dest.width = SQUARE_SIZE_IN_PIXELS;
-                Dest.height = SQUARE_SIZE_IN_PIXELS;
+                Source = (Rectangle){PieceTextureOffset.X, PieceTextureOffset.Y, PIECE_TEXTURE_SIZE, PIECE_TEXTURE_SIZE};
+                Dest = (Rectangle){X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS};
                 DrawTexturePro(APP_STATE.ChessPieceTexture, Source, Dest, Origin, 0.0f, Tint);
             }
             if (APP_STATE.HoverSquare.X == Col && APP_STATE.HoverSquare.Y == Row)
