@@ -261,7 +261,7 @@ class Board:
             return False
         if self.board_state[r2,f2].decode() in friend_list:
             return False
-
+        
         """
         Is the current player's king in check in the resulting position?'
          - It may make sense to place this check after the others if it's
@@ -269,110 +269,12 @@ class Board:
         "Simulate" the resulting position and determine if the player;s king
          is in check.'
         """
+        temp_board = self.board_state
+        temp_board[r2,f2] = temp_board[r1,f1]
+        temp_board[r1,f1] = ''
+        if self.is_check(temp_board,friend_list):
+            return False
         
-        """
-        # Locate the current player's king
-        king_location = [-1,-1]
-        if self.white_to_move:
-            king_char = 'K'
-        else:
-            king_char = 'k'
-        
-        # TODO: Not the cleanest way to do this but should work for now
-        # Compare speed of this search to a list where we would only need one
-        # for loop and use the .index method.
-        king_located = False
-        for rank in range(self.BOARD_SIZE):
-            if not king_located:
-                for file in range(self.BOARD_SIZE):
-                    if self.board_state[rank,file].decode() == king_char:
-                        king_location = [rank,file]
-                        king_located = True
-                        break
-            else:
-                break
-        
-        # TODO: Break is_check into its own function
-        is_check = False
-        
-        # Search for checks along the diagonals
-        if self.white_to_move:
-            enemy_list = ["r", "n", "k"]
-        else:
-            enemy_list = ["R", "N", "K"]
-        
-        diagonals = [[1,1],[1,-1],[-1,-1],[-1,1]]
-        for i in range(4):
-            scan_location = king_location
-            # Iterate until you hit the edge of the board
-            while (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
-                (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)):
-                # If you run into your own piece or an enemy piece that is not
-                # a bishop or queen, there is no check on this diagonal.
-                if self.board_state[scan_location[0],scan_location[1]].decode() in friend_list or \
-                    self.board_state[scan_location[0],scan_location[1]].decode() in enemy_list:
-                    break
-                # If you run into an enemy bishop or queen, it is check.
-                if self.board_state[scan_location[0],scan_location[1]].decode().lower() in ["b", "q"]:
-                    is_check = True
-                    break
-                # If you run into an enemy pawn, the pawn has to be touching the king
-                # If you're white, the checking pawn has to be on a higher numbered rank
-                # If you're black, the checking pawn has to be on a lower numbered rank
-                if self.board_state[scan_location[0],scan_location[1]].decode().lower() in ['p']:
-                    if self.white_to_move and (king_location[0] - scan_location[0] == 1):
-                        is_check = True
-                    elif not self.white_to_move and (king_location[0] - scan_location[0] == -1):
-                        is_check = True 
-                scan_location[0] += diagonals[i][0]
-                scan_location[1] += diagonals[i][1]
-        
-        # Search for checks along the ranks and files
-        if self.white_to_move:
-            enemy_list = ["p", "b", "k"]
-        else:
-            enemy_list = ["P", "B", "K"]
-            
-        rank_file = [[0,1],[0,-1],[1,0],[-1,0]]
-        for i in range(4):
-            scan_location = king_location
-            # Iterate until you hit the edge of the board
-            while (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
-                (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)):
-                # If you run into your own piece or an enemy piece that is not
-                # a rook or queen, there is no check on this diagonal.
-                if self.board_state[scan_location[0],scan_location[1]].decode() in friend_list or \
-                    self.board_state[scan_location[0],scan_location[1]].decode() in enemy_list:
-                    break
-                # If you run into an enemy rook or queen, it is check.
-                if self.board_state[scan_location[0],scan_location[1]].decode().lower() in ["r", "q"]:
-                    is_check = True
-                    break
-                scan_location[0] += rank_file[i][0]
-                scan_location[1] += rank_file[i][1]
-                
-                
-        # Search for knight checks
-        if self.white_to_move:
-            enemy_list = ["p", "r", "b", "q", "k"]
-        else:
-            enemy_list = ["P", "R", "B", "Q", "K"]
-        
-        # Shout out Bob Seger
-        knight_moves = [[2,1],[1,2],[-1,2],[-2,1],[-2,-1],[-1,-2],[1,-2],[2,-1]]
-        for i in range(len(knight_moves)):
-            scan_location = king_location
-            scan_location[0] += knight_moves[i][0]
-            scan_location[1] += knight_moves[i][1]
-            
-            if self.board_state[scan_location[0],scan_location[1]].decode() in friend_list or \
-                self.board_state[scan_location[0],scan_location[1]].decode() in enemy_list:
-                break
-            # If you run into an enemy knight, it is check.
-            if self.board_state[scan_location[0],scan_location[1]].decode().lower() in ["n"]:
-                is_check = True
-                break
-        """
         
         # TODO: Temp
         diagonals = [[1,1],[1,-1],[-1,-1],[-1,1]]
@@ -523,6 +425,103 @@ class Board:
         
         # If the move makes it through the above gauntlet, it's allowed.
         return True
+    
+    def is_check(self,temp_board,friend_list):
+        # Locate the current player's king
+        king_location = [-1,-1]
+        if self.white_to_move:
+            king_char = 'K'
+        else:
+            king_char = 'k'
+        
+        # TODO: Not the cleanest way to do this but should work for now
+        # Compare speed of this search to a list where we would only need one
+        # for loop and use the .index method.
+        king_located = False
+        for rank in range(self.BOARD_SIZE):
+            if not king_located:
+                for file in range(self.BOARD_SIZE):
+                    if temp_board[rank,file].decode() == king_char:
+                        king_location = [rank,file]
+                        king_located = True
+                        break
+            else:
+                break
+        
+        # Search for checks along the diagonals
+        if self.white_to_move:
+            enemy_list = ["b", "q"]
+            enemy_pawn = "p"
+        else:
+            enemy_list = ["B", "Q"]
+            enemy_pawn = "P"
+            
+        diagonals = [[1,1],[1,-1],[-1,-1],[-1,1]]
+        for i in range(4):
+            scan_location = king_location
+            # Iterate until you hit the edge of the board
+            while (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
+                (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)):
+                # If you run into an enemy bishop or queen, it is check.
+                if temp_board[scan_location[0],scan_location[1]].decode() in enemy_list:
+                    return True
+                # If you run into an enemy pawn, the pawn has to be touching the king
+                # If you're white, the checking pawn has to be on a higher numbered rank
+                # If you're black, the checking pawn has to be on a lower numbered rank
+                if temp_board[scan_location[0],scan_location[1]].decode() in enemy_pawn:
+                    if self.white_to_move and (king_location[0] - scan_location[0] == -1):
+                        return True
+                    elif not self.white_to_move and (king_location[0] - scan_location[0] == 1):
+                        return True
+                # If you run into anything else, there is no check on this diagonal.
+                if not temp_board[scan_location[0],scan_location[1]].decode() == "":
+                    break
+                scan_location[0] += diagonals[i][0]
+                scan_location[1] += diagonals[i][1]
+        
+        # Search for checks along the ranks and files
+        if self.white_to_move:
+            enemy_list = ["r", "q"]
+        else:
+            enemy_list = ["R", "Q"]
+            
+        rank_file = [[0,1],[0,-1],[1,0],[-1,0]]
+        for i in range(4):
+            scan_location = king_location
+            # Iterate until you hit the edge of the board
+            while (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
+                (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)):
+                # If you run into an enemy rook or queen, it is check.
+                if temp_board[scan_location[0],scan_location[1]].decode() in enemy_list:
+                    return True
+                # If you run into anything else, there is no check on this diagonal.
+                if not temp_board[scan_location[0],scan_location[1]].decode() == "":
+                    break
+                scan_location[0] += rank_file[i][0]
+                scan_location[1] += rank_file[i][1]
+                
+                
+        # Search for knight checks
+        if self.white_to_move:
+            enemy_list = ["n"]
+        else:
+            enemy_list = ["N"]
+        
+        # Shout out Bob Seger
+        knight_moves = [[2,1],[1,2],[-1,2],[-2,1],[-2,-1],[-1,-2],[1,-2],[2,-1]]
+        for i in range(len(knight_moves)):
+            scan_location = king_location
+            scan_location[0] += knight_moves[i][0]
+            scan_location[1] += knight_moves[i][1]
+            
+            
+            if (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
+                (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)) and \
+                    temp_board[scan_location[0],scan_location[1]].decode().lower() in enemy_list:
+                        return True
+            
+        # If you make it through this gauntlet, the king is not in check
+        return False
 
         # TODO: def generate_fen(self):
     
@@ -530,8 +529,6 @@ class Board:
         
         # TODO: def validate_move(self):
         # or generate the entire list of legal moves to compare against
-        
-        # TODO: def is_check()
         
         # TODO: Separate module for validate move. Includes is_check, en passant, etc.
         

@@ -19,8 +19,8 @@ from Board import Board
 # Test 3: Try to move a piece that doesn't exist
 # Test 2: Try to move an enemy piece
 
-test_moves = ["j2j4","e2e2","e3e4","e7e5"]
-test_fen = ["","","",""]
+test_moves = ["j2j4","e2e2","e3e4","e7e5","e2e4"]
+test_fen = ["","","","",""]
 for i, move in enumerate(test_moves):
     if len(test_fen[i]) == 0:
         board = Board()
