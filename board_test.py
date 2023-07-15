@@ -12,7 +12,12 @@ from Board import Board
 # board = Board('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1')
 # board = Board('rnbqkbnr/pppp1ppp/8/4p3/4PP1q/8/PPPP2PP/RNBQKBNR w KQkq - 0 1')
 
-board = Board()
+# board = Board()
+# board = Board('r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4')
+# Castling test
+board = Board('r3k2r/pppqbppp/2npbn2/4p3/2B1P3/P1NPBN2/1PPQ1PPP/R3K2R w KQkq - 1 9')
+# En passant test
+# board = Board('rnbqkbnr/pppp2pp/8/3Pp3/4Pp2/2P5/PP3PPP/RNBQKBNR w KQkq - 0 5')
 
 
 # Test 1: Try to move a piece outside of the board

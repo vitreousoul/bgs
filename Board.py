@@ -139,8 +139,13 @@ class Board:
         
         """
         Determine En Passant target square
+        TODO: Add additional error checking for ep_target input from FEN
         """
-        self.ep_target = split_fen[3]
+        ep_temp = split_fen[3]
+        if len(ep_temp) == 2:
+            self.ep_target = [(int(ep_temp[1])-1),(ord(ep_temp[0])-self.ASCII_lowA)]
+        else:
+            self.ep_target = []
         
         """
         Determine halfmove clock
@@ -196,6 +201,15 @@ class Board:
         # TODO: This is also defined elsewhere
         rank_diff = r2 - r1
         file_diff = f2 - f1
+        
+        # If it's a pawn move of two squares, assign the ep_target
+        ep_flag = False
+        if self.board_state[r1,f1].decode().lower() == 'p' and np.absolute(r2-r1) == 2:
+            if self.white_to_move:
+                self.ep_target = [r2-1,f2]
+            else:
+                self.ep_target = [r2+1,f2]
+            ep_flag = True
             
         # TODO: Validate Move
         # If it passes the test as a valid move, execute
@@ -208,29 +222,77 @@ class Board:
             rank_diff == 0 and np.absolute(file_diff) == 2:
                 # Move the king to the castling square
                 self.board_state[r2,f2] = self.board_state[r1,f1]
+                self.board_state[r1,f1] = ""
                 if self.white_to_move:
                     # If white is castling king side, move the rook over
                     if file_diff > 0:
-                        self.board_state[0,f1-1] = self.board_state[0,-1]
+                        self.board_state[0,f2-1] = self.board_state[0,-1]
+                        self.board_state[0,-1] = ""
                     # If white is castling queen side, move the rook over
                     else:
-                        self.board_state[0,f1+1] = self.board_state[0,0]
+                        self.board_state[0,f2+1] = self.board_state[0,0]
+                        self.board_state[0,0] = ""
+                    # Remove white's castling rights
+                    self.wck = False
+                    self.wcq = False
                 else:
                     # If black is castling king side, move the rook over
                     if file_diff > 0:
-                        self.board_state[-1,f1-1] = self.board_state[-1,-1]
+                        self.board_state[-1,f2-1] = self.board_state[-1,-1]
+                        self.board_state[-1,-1] = ""
                     # If black is castling queen side, move the rook over
                     else:
-                        self.board_state[-1,f1+1] = self.board_state[-1,0]
+                        self.board_state[-1,f2+1] = self.board_state[-1,0]
+                        self.board_state[-1,0] = ""
+                    # Remove black's castling rights
+                    self.bck = False
+                    self.bcq = False
         # TODO: If the move is capturing en passant
-        # elif :
+        elif self.board_state[r1,f1].decode().lower() == 'p' and len(self.ep_target) > 0 and \
+            r2 == self.ep_target[0] and f2 == self.ep_target[1]:
+            self.board_state[r2,f2] = self.board_state[r1,f1]
+            self.board_state[r1,f1] = ""
+            if self.white_to_move:
+                self.board_state[r2-1,f2] = ""
+            else:
+                self.board_state[r2+1,f2] = ""
+            self.ep_target = []
         # TODO: If the move is a pawn promotion
-        # elif :
+        #       Auto-queen for now
+        elif self.board_state[r1,f1].decode().lower() == 'p' and (r2 == 0 or r2 == (self.BOARD_SIZE - 1)):
+            if self.white_to_move:
+                self.board_state[r2,f2] = 'Q'
+            else:
+                self.board_state[r2,f2] = 'q'
+            self.board_state[r1,f1] = ''
         # Any other type of move
         else:
+            # If it's a king move, remove castling rights
+            # TODO: Having it check this every move is probably not efficient
+            #       but it's fine for now.
+            if self.white_to_move and (self.wcq or self.wck):
+                if self.board_state[r1,f1].decode().lower() == 'k':
+                    self.wck = False
+                    self.wcq = False
+                # If white's A1 rook moves, remove queen side castling rights
+                elif self.board_state[r1,f1].decode().lower() == 'r' and r1 == 0 and f1 == 0:
+                    self.wcq = False
+                # If white's H1 rook moves, remove king side castling rights
+                elif self.board_state[r1,f1].decode().lower() == 'r' and r1 == 0 and f1 == (self.BOARD_SIZE-1):
+                    self.wck = False
+            elif not self.white_to_move and (self.bcq or self.bck):
+                if self.board_state[r1,f1].decode().lower() == 'k':
+                    self.bck = False
+                    self.bcq = False 
+                # If black's A8 rook moves, remove queen side castling rights
+                elif self.board_state[r1,f1].decode().lower() == 'r' and r1 == (self.BOARD_SIZE-1) and f1 == 0:
+                    self.bcq = False
+                # If black's H8 rook moves, remove king side castling rights
+                elif self.board_state[r1,f1].decode().lower() == 'r' and r1 == (self.BOARD_SIZE-1) and f1 == (self.BOARD_SIZE-1):
+                    self.bck = False
+                    
             self.board_state[r2,f2] = self.board_state[r1,f1]
             self.board_state[r1,f1] = ''
-        
             
         # TODO: Update the following params accordingly
         # - Who's move indicator
@@ -239,11 +301,9 @@ class Board:
         # - Half move counter
         # - Full move counter
         
-        # if self.white_to_move:
-        #     print('\nWhite plays ' + user_move + '.')
-        # else:
-        #     print('\nBlack plays ' + user_move + '.')
-        
+        # If the move just played was not a pawn moving 2 squares, reset the ep_target
+        if not ep_flag:
+            self.ep_target = []
         self.white_to_move = not self.white_to_move
         # print(self)
         return 0
@@ -495,7 +555,7 @@ class Board:
                 # If the diagonal square you're trying to move to is empty (google en passant)
                 if len(self.board_state[r2,f2]) == 0:
                     # If en passant is not allowed
-                    if self.ep_target == "-":
+                    if not len(self.ep_target) == 2:
                         return False
                     # If the en passant target sqaure doesn't match where you're
                     #   trying to go, return false.

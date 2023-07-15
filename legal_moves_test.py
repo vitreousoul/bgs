@@ -43,7 +43,7 @@ Bugs - Fischer - Spassky Move 2 for white
 """
 # board = Board('rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2')
 
-""" 
+"""  
 Bugs - Fischer - Spassky Move 3 for white
  - Queen cannot hop over knight d1g4 = 03 36 = 222
    - fixed (diagonal iterations were only looking one square deep)
@@ -70,7 +70,13 @@ Bugs - Fischer - Spassky Move 5 for white
 Bugs - Fischer - Spassky Move 24 for black
  - King should not be allowed to take on f7 g8f7 = 76 65 = 4021
 """
-board = Board('4rrk1/1b3Bp1/1n3q1p/2p1N3/1p6/7P/PP3PP1/R2QR1K1 b - - 0 24')
+# board = Board('4rrk1/1b3Bp1/1n3q1p/2p1N3/1p6/7P/PP3PP1/R2QR1K1 b - - 0 24')
+
+
+"""
+En passant example
+"""
+board = Board('rnbqkbnr/pp1p2pp/5p2/2pPp3/4P3/8/PPP2PPP/RNBQKBNR w KQkq c6 0 4')
 
 
 valid_flag = np.zeros((SQUARE_PAIRS,1),dtype=bool)
