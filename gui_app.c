@@ -26,7 +26,7 @@ const Color SELECTED_SQUARE_COLOR = {105,85,205,59};
 const Color SELECTED_SQUARE_OUTLINE_COLOR = {100,20,100,255};
 
 double BOARD[BOARD_SIZE][BOARD_SIZE];
-app_state APP_STATE;
+static app_state APP_STATE;
 
 #define PIECE_TEXTURE_SIZE 120
 
@@ -261,11 +261,12 @@ static void HandleMove(PyObject *Board)
     int HasMoveSquare = APP_STATE.MoveSquare.X >= 0 && APP_STATE.MoveSquare.Y >= 0;
     if (HasSelectedSquare && HasMoveSquare)
     {
-        char MoveString[4] = {
+        char MoveString[5] = {
             FILE_TABLE[APP_STATE.SelectedSquare.X],
             RANK_TABLE[APP_STATE.SelectedSquare.Y],
             FILE_TABLE[APP_STATE.MoveSquare.X],
             RANK_TABLE[APP_STATE.MoveSquare.Y],
+            0
         };
         MakeMove(Board, MoveString);
         APP_STATE.SelectedSquare = (ivec2){-1,-1};
