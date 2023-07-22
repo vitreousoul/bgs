@@ -603,6 +603,13 @@ class Board:
             scan_location = king_location.copy()
             scan_location[0] += diagonals[i][0]
             scan_location[1] += diagonals[i][1]
+            
+            # See if the adjacent square contains the enemy king
+            if (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
+                (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)) and \
+                temp_board[scan_location[0],scan_location[1]].decode().lower() == "k":
+                    return True
+            
             # Iterate until you hit the edge of the board
             while (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
                 (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)):
@@ -628,17 +635,26 @@ class Board:
             enemy_list = ["r","q"]
         else:
             enemy_list = ["R","Q"]
-            
-        rank_file = [[0,1],[0,-1],[1,0],[-1,0]]
+        
+        rank_file = ((0,1),(0,-1),(1,0),(-1,0))
         for i in range(4):
             scan_location = king_location.copy()
+            scan_location[0] += rank_file[i][0]
+            scan_location[1] += rank_file[i][1]
+            
+            # See if the adjacent square contains the enemy king
+            if (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
+                (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)) and \
+                temp_board[scan_location[0],scan_location[1]].decode().lower() == "k":
+                    return True
+            
             # Iterate until you hit the edge of the board
             while (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
                 (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)):
                 # If you run into an enemy rook or queen, it is check.
                 if temp_board[scan_location[0],scan_location[1]].decode() in enemy_list:
                     return True
-                # If you run into anything else, there is no check on this diagonal.
+                # If you run into anything else, there is no check on this rank/file.
                 if not temp_board[scan_location[0],scan_location[1]].decode() == "":
                     break
                 scan_location[0] += rank_file[i][0]
@@ -652,13 +668,11 @@ class Board:
             enemy_list = ["N"]
         
         # Shout out Bob Seger
-        knight_moves = [[2,1],[1,2],[-1,2],[-2,1],[-2,-1],[-1,-2],[1,-2],[2,-1]]
+        knight_moves = ((2,1),(1,2),(-1,2),(-2,1),(-2,-1),(-1,-2),(1,-2),(2,-1))
         for i in range(len(knight_moves)):
             scan_location = king_location.copy()
             scan_location[0] += knight_moves[i][0]
             scan_location[1] += knight_moves[i][1]
-            
-            
             if (0 <= scan_location[0] <= (self.BOARD_SIZE - 1)) and \
                 (0 <= scan_location[1] <= (self.BOARD_SIZE - 1)) and \
                     temp_board[scan_location[0],scan_location[1]].decode() in enemy_list:
@@ -667,6 +681,35 @@ class Board:
         # If you make it through this gauntlet, the king is not in check
         return False
 
+    def is_EOG(self):
+        SQUARE_PAIRS = int("7777",8)
+        all_moves = np.zeros((SQUARE_PAIRS,4),dtype=int)
+        for i in range(SQUARE_PAIRS):
+            move_str = np.base_repr(i,base=8,padding=4)
+            all_moves[i,-1] = move_str[-1]
+            all_moves[i,-2] = move_str[-2]
+            all_moves[i,-3] = move_str[-3]
+            all_moves[i,-4] = move_str[-4]
+            
+        valid_flag = np.zeros((SQUARE_PAIRS,1),dtype=bool)
+        for i in range(SQUARE_PAIRS):
+            r1 = all_moves[i,0]
+            f1 = all_moves[i,1]
+            r2 = all_moves[i,2]
+            f2 = all_moves[i,3]
+            if self.validate_move(r1,f1,r2,f2):
+                valid_flag[i] = 1
+            else:
+                valid_flag[i] = 0
+        num_legal_moves = np.sum(valid_flag)
+        
+        if num_legal_moves == 0:
+            if self.is_check(self.board_state):
+                return 1
+            else:
+                return 2
+        else:
+            return 0
         # TODO: def generate_fen(self):
     
         # TODO: def vaidate_fen(self):

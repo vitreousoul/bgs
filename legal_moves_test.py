@@ -21,8 +21,6 @@ for i in range(SQUARE_PAIRS):
     all_moves[i,-3] = move_str[-3]
     all_moves[i,-4] = move_str[-4]
 
-
-
 # board = Board('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1')
 # board = Board('rnbqkbnr/pppp1ppp/8/4p3/4PP1q/8/PPPP2PP/RNBQKBNR w KQkq - 0 1')
 # board = Board('8/8/3k4/4r3/3K4/8/8/8 w - - 0 1')
@@ -76,7 +74,43 @@ Bugs - Fischer - Spassky Move 24 for black
 """
 En passant example
 """
-board = Board('rnbqkbnr/pp1p2pp/5p2/2pPp3/4P3/8/PPP2PPP/RNBQKBNR w KQkq c6 0 4')
+# board = Board('rnbqkbnr/pp1p2pp/5p2/2pPp3/4P3/8/PPP2PPP/RNBQKBNR w KQkq c6 0 4')
+
+"""
+Bugs - Fischer - Spassky Move 26 for white
+ - There should only be 2 legal moves in this position
+ - Found a bug in is_check(). Due to scan_location not be incremented at
+   the start of the loop, checks along the ranks/files weren't being identified.
+   I.e. the scan was finding the king and stopping there.
+"""
+# board = Board('6k1/1b3Np1/1n3q1p/2p5/1p6/7P/PP3PP1/R2Qr1K1 w - - 0 26')
+
+
+"""
+Bugs - Fischer - Spassky Move 43 for black
+ - No bugs, 17 legal moves correctly identified
+"""
+# board = Board('8/8/R5p1/2k3p1/1p4P1/1P1b1P2/3K1n2/8 w - - 1 43')
+
+
+"""
+Bugs - Fischer - Spassky Move 43 for black
+ - No bugs, 17 legal moves correctly identified 
+"""
+# board = Board('8/8/4R1p1/2k3p1/1p4P1/1P1b1P2/3K1n2/8 b - - 2 43')
+
+
+"""
+Bugs - Checkmate example, scholar's mate
+ - Should zero legal moves. Correctly identified.
+"""
+# board = Board('r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4')
+
+"""
+Bugs - Stalemate example
+ - Should zero legal moves. Correctly identified.
+"""
+board = Board('8/8/8/8/8/5KQ1/8/7k b - - 1 1')
 
 
 valid_flag = np.zeros((SQUARE_PAIRS,1),dtype=bool)
@@ -85,7 +119,7 @@ for i in range(SQUARE_PAIRS):
     f1 = all_moves[i,1]
     r2 = all_moves[i,2]
     f2 = all_moves[i,3]
-    # if i == 4021:
+    # if i == 1:
         # print("here")
     if board.validate_move(r1,f1,r2,f2):
         valid_flag[i] = 1

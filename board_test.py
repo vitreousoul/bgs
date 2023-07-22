@@ -4,6 +4,9 @@ Simple board where the user is prompted to make moves for white and black
 
 TODO: Removed automatic print statements from Board.py. Instead, have the UI
    module handle printing the board and error messages.
+   
+   - Determine checkmate, stalemate
+   - Handle pawn promotion
 """
 
 from Board import Board
@@ -13,9 +16,24 @@ from Board import Board
 # board = Board('rnbqkbnr/pppp1ppp/8/4p3/4PP1q/8/PPPP2PP/RNBQKBNR w KQkq - 0 1')
 
 # board = Board()
+# Checkmate test
+""" 
+Bug found - need to make it illegal for kings to touch
+ - Fixed - needed to add a check for king on adjacent square for diagonals
+           and ranks/files
+"""
+board = Board('8/8/8/8/8/5K2/6Q1/7k b - - 0 1')
+
+# Stalemate test
+""" 
+No bugs found
+"""
+# board = Board('8/8/8/8/8/5KQ1/8/7k b - - 1 1')
+
+
 # board = Board('r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4')
 # Castling test
-board = Board('r3k2r/pppqbppp/2npbn2/4p3/2B1P3/P1NPBN2/1PPQ1PPP/R3K2R w KQkq - 1 9')
+# board = Board('r3k2r/pppqbppp/2npbn2/4p3/2B1P3/P1NPBN2/1PPQ1PPP/R3K2R w KQkq - 1 9')
 # En passant test
 # board = Board('rnbqkbnr/pppp2pp/8/3Pp3/4Pp2/2P5/PP3PPP/RNBQKBNR w KQkq - 0 5')
 
@@ -38,26 +56,44 @@ board = Board('r3k2r/pppqbppp/2npbn2/4p3/2B1P3/P1NPBN2/1PPQ1PPP/R3K2R w KQkq - 1
 #     else:
 #         print("Test " + str(i+1) + " failed.")
 
-print(board)
-while True:
-    
-    if board.white_to_move:
-        user_move = input("Enter a move for White: ")
-    else:
-        user_move = input("Enter a move for Black: ")
-    
-    if user_move.lower() == 'q' or user_move.lower() == 'quit':
-        break
-    
-    move_result = board.move(user_move)
-    if move_result == 1:
-        print("Invalid move. Try again.\n")
-    else:
-        print(board)
-    
-""" 
-TODO: Test move valdation
-So far, pawn moves from their initial squares, e4 and e5 have been tested.
-Need to come up with a testing plan to cover every branch
- of the validation.
-"""
+
+if board.is_EOG() == 0:
+    print(board)
+    while True:
+        if board.white_to_move:
+            user_move = input("Enter a move for White: ")
+        else:
+            user_move = input("Enter a move for Black: ")
+        
+        if user_move.lower() == 'q' or user_move.lower() == 'quit':
+            break
+        
+        move_result = board.move(user_move)
+        if move_result == 1:
+            print("Invalid move. Try again.\n")
+        else:
+            # If the board state isn't checkmate, or stalemate continue
+            # TODO: Need to check for repetition, etc. as well.
+            if board.is_EOG() == 0:
+                print(board)
+            else:
+                if board.is_EOG() == 1:
+                    if not board.white_to_move:
+                        print("Game over. White wins by checkmate.")
+                        break
+                    else:
+                        print("Game over. Black wins by checkmate.")
+                        break
+                elif board.is_EOG() == 2:
+                    print("Game over. Draw by stalemate.")
+                    break
+else:
+    if board.is_EOG() == 1:
+        if not board.white_to_move:
+            print("Game over. White wins by checkmate.")
+        else:
+            print("Game over. Black wins by checkmate.")
+    elif board.is_EOG() == 2:
+        print("Game over. Draw by stalemate.")
+
+
