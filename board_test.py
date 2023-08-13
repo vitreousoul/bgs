@@ -22,13 +22,17 @@ Bug found - need to make it illegal for kings to touch
  - Fixed - needed to add a check for king on adjacent square for diagonals
            and ranks/files
 """
-board = Board('8/8/8/8/8/5K2/6Q1/7k b - - 0 1')
+# board = Board('8/8/8/8/8/5K2/6Q1/7k b - - 0 1')
 
 # Stalemate test
 """ 
 No bugs found
 """
 # board = Board('8/8/8/8/8/5KQ1/8/7k b - - 1 1')
+
+
+# Pawn promotion test
+board = Board('8/6P1/4k3/8/3K4/8/8/8 w - - 0 1')
 
 
 # board = Board('r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4')

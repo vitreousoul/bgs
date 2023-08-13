@@ -714,8 +714,4 @@ class Board:
     
         # TODO: def vaidate_fen(self):
         
-        # TODO: def validate_move(self):
-        # or generate the entire list of legal moves to compare against
-        
-        # TODO: Separate module for validate move. Includes is_check, en passant, etc.
         

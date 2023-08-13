@@ -110,8 +110,74 @@ Bugs - Checkmate example, scholar's mate
 Bugs - Stalemate example
  - Should zero legal moves. Correctly identified.
 """
-board = Board('8/8/8/8/8/5KQ1/8/7k b - - 1 1')
+# board = Board('8/8/8/8/8/5KQ1/8/7k b - - 1 1')
 
+
+"""
+Bugs - Opera Game - Move 11 for black
+ - King in check from bishop - Correct.
+"""
+# board = Board('rn2kb1r/p3qppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/R3K2R b KQkq - 0 11')
+
+"""
+Bugs - Opera Game - Move 12 for black
+ - Knight is pinned to king. King can castle queen side - Correct
+"""
+# board = Board('r3kb1r/p2nqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2KR3R b kq - 2 12')
+
+"""
+Bugs - Opera Game - Move 14 for black
+ - Rook is pinned to king - Correct
+"""
+# board = Board('4kb1r/p2rqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2KR4 b k - 1 14')
+
+"""
+Bugs - Opera Game - Move 15 for black
+ - King is in check from bishop - Correct
+"""
+# board = Board('4kb1r/p2B1ppp/4qn2/4p1B1/4P3/1Q6/PPP2PPP/2KR4 b k - 0 15')
+
+
+"""
+Bugs - Opera Game - Move 16 for black
+ - Queen sacrafice, black has to accept - Correct
+"""
+# board = Board('1Q2kb1r/p2n1ppp/4q3/4p1B1/4P3/8/PPP2PPP/2KR4 b k - 1 16')
+
+
+"""
+Bugs - Opera Game - Move 17 for white
+ - Mate in one on the board - Correct
+"""
+# board = Board('1n2kb1r/p4ppp/4q3/4p1B1/4P3/8/PPP2PPP/2KR4 w k - 0 17')
+
+"""
+Bugs - Opera Game - Move 17 for black
+ - Checkmate - Correct
+"""
+# board = Board('1n1Rkb1r/p4ppp/4q3/4p1B1/4P3/8/PPP2PPP/2K5 b k - 1 17')
+
+"""
+Bugs - Endgame example - pawn promotion
+ - Correct
+"""
+# board = Board('8/6P1/4k3/8/3K4/8/8/8 w - - 0 1')
+# Queen has been made. Black king in check
+# board = Board('6Q1/8/4k3/8/3K4/8/8/8 b - - 0 1')
+
+"""
+Bugs - Double check test
+ - Black is in double check and only has one move - Correct
+"""
+board = Board('r6r/2qknP1p/p5p1/1p2pB2/8/2P1B3/P1PR2PP/5RK1 b - - 2 22')
+
+"""
+Bugs - Counter check test
+"""
+# White is in check
+# board = Board('8/6P1/8/8/1q2K3/8/5Q2/k7 w - - 0 1')
+# Now black is in check after the counter
+# board = Board('8/6P1/8/8/1q1QK3/8/8/k7 b - - 1 1')
 
 valid_flag = np.zeros((SQUARE_PAIRS,1),dtype=bool)
 for i in range(SQUARE_PAIRS):
