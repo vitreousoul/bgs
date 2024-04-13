@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-DEBUG=0
+DEBUG=1
 
 if [ -z "$1" ]; then
     TARGET_NAME="gui_app";
