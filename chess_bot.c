@@ -74,10 +74,12 @@ typedef enum
 */
 #define Get_Piece_Color(p) ((p) & (1 << 4))
 #define Is_White_Piece(p) (Get_Piece_Color(p) == 0)
-#define Is_Black_Piece(p) (Get_Piece_Color(p) == 1)
+#define Is_Black_Piece(p) (Get_Piece_Color(p) != 0)
 
 #define Is_Valid_Piece(p) ((p) >= (piece_White_Queen_Rook) && (p) < piece_Count)
 #define Is_Valid_Square(s) ((s) >= 0 && (s) < 64)
+#define Is_Valid_Row_Col(row, col) ((row) >= 0 && (row) < 8 && (col) >= 0 && (col) < 8)
+#define Get_Square_Index(row, col) ((row) * 8 + (col))
 
 typedef enum
 {
@@ -141,19 +143,27 @@ global_variable char PieceDisplayTable[piece_Count] = {
 #define Black_Queen_Side_Castle_Flag (1 << 3)
 #define Black_King_Side_Castle_Flag  (1 << 4)
 
-#define Flag_Get(  flags, flag) (((flags) &  (flag)) == 1)
-#define Flag_Set(  flags, flag)  ((flags) & ~(flag) | flag)
-#define Flag_Unset(flags, flag)  ((flags) & ~(flag))
+#define Flag_Get(  flags, flag) (((flags) &  (flag)) != 0)
+#define Flag_Set(  flags, flag)  ((flags) = (flags) & ~(flag) | flag)
+#define Flag_Unset(flags, flag)  ((flags) = (flags) & ~(flag))
+#define Flag_Toggle(flags, flag)  (Flag_Get((flags), (flag)) ? Flag_Unset((flags), (flag)) : Flag_Set((flags), (flag)))
 
 #define Is_White_Turn(v) ((v) == 0)
 #define Is_Black_Turn(v) ((v) == 1)
 
-#define Get_Square_Index(row, col) ((row) * 8 + (col))
+typedef enum
+{
+    move_type_Null,
+    move_type_Move,
+    move_type_QueenCastle,
+    move_type_KingCastle,
+    move_type_EnPassant,
+} move_type;
 
 typedef struct
 {
+    move_type Type;
     piece Piece;
-    b32 EnPassant;
     square BeginSquare;
     square EndSquare;
 } move;
@@ -197,10 +207,11 @@ internal void Assert_(b32 Proposition, char *FilePath, s32 LineNumber)
 #define Assert(p)
 #endif
 
-internal void AddPotential(move_data *MoveData, game_state *GameState, piece Piece, square EndSquare, b32 EnPassant)
+internal void AddPotential(move_data *MoveData, game_state *GameState, piece Piece, square EndSquare, move_type MoveType)
 {
+    b32 IsCastleMove = MoveType == move_type_QueenCastle || MoveType == move_type_KingCastle;
     Assert(Is_Valid_Piece(Piece));
-    Assert(Is_Valid_Square(EndSquare));
+    Assert(IsCastleMove || Is_Valid_Square(EndSquare));
 
     square BeginSquare = GameState->Piece[Piece];
 
@@ -208,10 +219,10 @@ internal void AddPotential(move_data *MoveData, game_state *GameState, piece Pie
 
     if (MoveData->PotentialCount < Max_Potential_Moves)
     {
+        MoveData->Potentials[MoveData->PotentialCount].Type = MoveType;
         MoveData->Potentials[MoveData->PotentialCount].Piece = Piece;
         MoveData->Potentials[MoveData->PotentialCount].BeginSquare = BeginSquare;
         MoveData->Potentials[MoveData->PotentialCount].EndSquare = EndSquare;
-        MoveData->Potentials[MoveData->PotentialCount].EnPassant = EnPassant;
         ++MoveData->PotentialCount;
     }
 }
@@ -243,14 +254,14 @@ internal void Look(move_data *MoveData, game_state *GameState, piece Piece, u8 R
         {
             if (Get_Piece_Color(TargetPiece) != PieceColor)
             {
-                AddPotential(MoveData, GameState, Piece, NewSquare, 0);
+                AddPotential(MoveData, GameState, Piece, NewSquare, move_type_Move);
             }
 
             break;
         }
         else
         {
-            AddPotential(MoveData, GameState, Piece, NewSquare, 0);
+            AddPotential(MoveData, GameState, Piece, NewSquare, move_type_Move);
         }
 
         CurrentRow += RowOffset;
@@ -341,7 +352,7 @@ internal void LookPawn(move_data *MoveData, game_state *GameState, piece Piece, 
 
         if (!Is_Valid_Piece(TargetPiece))
         {
-            AddPotential(MoveData, GameState, Piece, Square, 0);
+            AddPotential(MoveData, GameState, Piece, Square, move_type_Move);
         }
         else
         {
@@ -361,7 +372,7 @@ internal void LookPawn(move_data *MoveData, game_state *GameState, piece Piece, 
 
         if (Is_Valid_Piece(TargetPiece) && Get_Piece_Color(TargetPiece) != PieceColor)
         {
-            AddPotential(MoveData, GameState, Piece, Square, 0);
+            AddPotential(MoveData, GameState, Piece, Square, move_type_Move);
         }
     }
 
@@ -387,7 +398,7 @@ internal void LookPawn(move_data *MoveData, game_state *GameState, piece Piece, 
             if (IsPawnMove && WasTwoSquareMove && LastMoveOnSameCol)
             {
                 square CaptureSquare = Get_Square_Index(Row + Multiplier, CurrentCol);
-                AddPotential(MoveData, GameState, Piece, CaptureSquare, 1);
+                AddPotential(MoveData, GameState, Piece, CaptureSquare, move_type_EnPassant);
             }
         }
     }
@@ -395,9 +406,104 @@ internal void LookPawn(move_data *MoveData, game_state *GameState, piece Piece, 
 
 internal void LookKnight(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col)
 {
-    Assert(!"TODO: Implement knight move\n");
+    s8 RowColOffsets[8][2] = {{1,2},{2,1},{2,-1},{1,-2},{-1,-2},{-2,-1},{-2,1},{-1,2}};
+    u8 PieceColor = Get_Piece_Color(Piece);
+
+    for (s32 I = 0; I < 8; ++I)
+    {
+        s8 TargetRow = Row + RowColOffsets[I][0];
+        s8 TargetCol = Col + RowColOffsets[I][1];
+
+        if (Is_Valid_Row_Col(TargetRow, TargetCol))
+        {
+            s32 NewSquare = TargetRow * 8 + TargetCol;
+            s32 TargetPiece = MoveData->Squares[NewSquare];
+
+            if (Is_Valid_Piece(TargetPiece))
+            {
+                if (Get_Piece_Color(TargetPiece) != PieceColor)
+                {
+                    AddPotential(MoveData, GameState, Piece, NewSquare, move_type_Move);
+                }
+            }
+            else
+            {
+                AddPotential(MoveData, GameState, Piece, NewSquare, move_type_Move);
+            }
+        }
+    }
 }
 
+internal void LookCastle(move_data *MoveData, game_state *GameState, piece Piece)
+{
+    u8 KingPosition;
+
+    if (Is_White_Piece(Piece))
+    {
+        KingPosition = E1;
+        Assert(GameState->Piece[Piece] == KingPosition);
+
+        if (Flag_Get(GameState->Flags, White_Queen_Side_Castle_Flag))
+        {
+            Assert(GameState->Piece[piece_White_Queen_Rook] == A1);
+
+            b32 B1Open = !Is_Valid_Piece(MoveData->Squares[B1]);
+            b32 C1Open = !Is_Valid_Piece(MoveData->Squares[C1]);
+            b32 D1Open = !Is_Valid_Piece(MoveData->Squares[D1]);
+
+            if (B1Open && C1Open && D1Open)
+            {
+                printf("add white queen side castle potential\n");
+                AddPotential(MoveData, GameState, Piece, 255, move_type_QueenCastle);
+            }
+        }
+
+        if (Flag_Get(GameState->Flags, White_King_Side_Castle_Flag))
+        {
+            Assert(GameState->Piece[piece_White_King_Rook] == H1);
+
+            b32 F1Open = !Is_Valid_Piece(MoveData->Squares[F1]);
+            b32 G1Open = !Is_Valid_Piece(MoveData->Squares[G1]);
+
+            if (F1Open && G1Open)
+            {
+                AddPotential(MoveData, GameState, Piece, 255, move_type_KingCastle);
+            }
+        }
+    }
+    else
+    {
+        KingPosition = E8;
+        Assert(GameState->Piece[Piece] == KingPosition);
+
+        if (Flag_Get(GameState->Flags, Black_Queen_Side_Castle_Flag))
+        {
+            Assert(GameState->Piece[piece_Black_Queen_Rook] == A8);
+
+            b32 B8Open = !Is_Valid_Piece(MoveData->Squares[B8]);
+            b32 C8Open = !Is_Valid_Piece(MoveData->Squares[C8]);
+            b32 D8Open = !Is_Valid_Piece(MoveData->Squares[D8]);
+
+            if (B8Open && C8Open && D8Open)
+            {
+                AddPotential(MoveData, GameState, Piece, 255, move_type_QueenCastle);
+            }
+        }
+
+        if (Flag_Get(GameState->Flags, Black_King_Side_Castle_Flag))
+        {
+            Assert(GameState->Piece[piece_Black_King_Rook] == H8);
+
+            b32 F8Open = !Is_Valid_Piece(MoveData->Squares[F8]);
+            b32 G8Open = !Is_Valid_Piece(MoveData->Squares[G8]);
+
+            if (F8Open && G8Open)
+            {
+                AddPotential(MoveData, GameState, Piece, 255, move_type_KingCastle);
+            }
+        }
+    }
+}
 
 internal void GeneratePotentials(move_data *MoveData, game_state *GameState)
 {
@@ -453,6 +559,7 @@ internal void GeneratePotentials(move_data *MoveData, game_state *GameState)
             case piece_type_King:
             {
                 LookAllDirections(MoveData, GameState, Piece, Row, Col, 1);
+                LookCastle(MoveData, GameState, Piece);
             } break;
             case piece_type_Pawn:
             {
@@ -470,6 +577,10 @@ internal void GeneratePotentials(move_data *MoveData, game_state *GameState)
 internal void InitializeGameState(game_state *GameState)
 {
     GameState->Flags = 0;
+    Flag_Set(GameState->Flags, White_Queen_Side_Castle_Flag);
+    Flag_Set(GameState->Flags, White_King_Side_Castle_Flag);
+    Flag_Set(GameState->Flags, Black_Queen_Side_Castle_Flag);
+    Flag_Set(GameState->Flags, Black_King_Side_Castle_Flag);
 
     for (s32 I = 0; I < 2; ++I)
     {
@@ -545,25 +656,104 @@ internal void RemovePiece(move_data *MoveData, game_state *GameState, piece Piec
 internal void MakeMove(move_data *MoveData, game_state *GameState, move Move)
 {
     piece Piece = Move.Piece;
+    b32 IsWhitePiece = Is_White_Piece(Piece);
 
     MoveData->Squares[GameState->Piece[Piece]] = piece_Null;
 
-    if (Move.EnPassant)
+    switch (Move.Type)
+    {
+    case move_type_EnPassant:
     {
         RemovePiece(MoveData, GameState, GameState->LastMove.Piece);
+    } /* Fall through */
+    case move_type_Move:
+    {
+        GameState->Piece[Piece] = Move.EndSquare;
+        MoveData->Squares[Move.EndSquare] = Piece;
+    } break;
+    case move_type_QueenCastle:
+    {
+        if (IsWhitePiece)
+        {
+            MoveData->Squares[GameState->Piece[piece_White_Queen_Rook]] = piece_Null;
+            GameState->Piece[piece_White_Queen_Rook] = D1;
+            MoveData->Squares[D1] = piece_White_Queen_Rook;
+
+            MoveData->Squares[GameState->Piece[piece_White_King]] = piece_Null;
+            GameState->Piece[piece_White_King] = C1;
+            MoveData->Squares[C1] = piece_White_King;
+        }
+        else
+        {
+            MoveData->Squares[GameState->Piece[piece_Black_Queen_Rook]] = piece_Null;
+            GameState->Piece[piece_Black_Queen_Rook] = D8;
+            MoveData->Squares[D8] = piece_Black_Queen_Rook;
+
+            MoveData->Squares[GameState->Piece[piece_Black_King]] = piece_Null;
+            GameState->Piece[piece_Black_King] = C8;
+            MoveData->Squares[C8] = piece_Black_King;
+        }
+    } break;
+    case move_type_KingCastle:
+    {
+        if (IsWhitePiece)
+        {
+            MoveData->Squares[GameState->Piece[piece_White_King_Rook]] = piece_Null;
+            GameState->Piece[piece_White_King_Rook] = F1;
+            MoveData->Squares[F1] = piece_White_King_Rook;
+
+            MoveData->Squares[GameState->Piece[piece_White_King]] = piece_Null;
+            GameState->Piece[piece_White_King] = G1;
+            MoveData->Squares[G1] = piece_White_King;
+        }
+        else
+        {
+            MoveData->Squares[GameState->Piece[piece_Black_King_Rook]] = piece_Null;
+            GameState->Piece[piece_Black_King_Rook] = F8;
+            MoveData->Squares[F8] = piece_Black_King_Rook;
+
+            MoveData->Squares[GameState->Piece[piece_Black_King]] = piece_Null;
+            GameState->Piece[piece_Black_King] = G8;
+            MoveData->Squares[G8] = piece_Black_King;
+        }
+    } break;
+    default:
+    {
+        Assert(!"Unknown move type");
+    }
     }
 
-    GameState->Piece[Piece] = Move.EndSquare;
-    MoveData->Squares[Move.EndSquare] = Piece;
+    Flag_Toggle(GameState->Flags, Whose_Turn_Flag);
 
-    b32 TurnFlag = Flag_Get(GameState->Flags, Whose_Turn_Flag);
-    if (TurnFlag)
+    switch (Piece)
     {
-        GameState->Flags = Flag_Unset(GameState->Flags, Whose_Turn_Flag);
-    }
-    else
+    case piece_White_Queen_Rook:
     {
-        GameState->Flags = Flag_Set(GameState->Flags, Whose_Turn_Flag);
+        Flag_Unset(GameState->Flags, White_Queen_Side_Castle_Flag);
+    } break;
+    case piece_Black_Queen_Rook:
+    {
+        Flag_Unset(GameState->Flags, Black_Queen_Side_Castle_Flag);
+    } break;
+    case piece_White_King_Rook:
+    {
+        Flag_Unset(GameState->Flags, White_King_Side_Castle_Flag);
+    } break;
+    case piece_Black_King_Rook:
+    {
+        Flag_Unset(GameState->Flags, Black_King_Side_Castle_Flag);
+    } break;
+    case piece_White_King:
+    {
+        Flag_Unset(GameState->Flags, White_Queen_Side_Castle_Flag);
+        Flag_Unset(GameState->Flags, White_King_Side_Castle_Flag);
+    } break;
+    case piece_Black_King:
+    {
+        Flag_Unset(GameState->Flags, Black_Queen_Side_Castle_Flag);
+        Flag_Unset(GameState->Flags, Black_King_Side_Castle_Flag);
+    } break;
+    default: break;
     }
 
     GameState->LastMove = Move;
@@ -580,8 +770,79 @@ int main(void)
     InitializeSquares(MoveData.Squares, &GameState);
 
     move Move = {0};
+    Move.Type = move_type_Move;
 
-#if 1
+#if 0
+    /* NOTE: Test un-passant for black. */
+    Move.Piece = piece_Black_Pawn_D;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = D3;
+    MakeMove(&MoveData, &GameState, Move);
+
+    Move.Piece = piece_White_Pawn_E;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = E4;
+    MakeMove(&MoveData, &GameState, Move);
+
+    GameState.Flags = Flag_Set(GameState.Flags, Whose_Turn_Flag);
+#elif 0
+    /* NOTE: Test castling for white. */
+    Move.Piece = piece_White_Queen_Knight;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = E5;
+    MakeMove(&MoveData, &GameState, Move);
+
+    Move.Piece = piece_White_Queen_Bishop;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = F5;
+    MakeMove(&MoveData, &GameState, Move);
+
+    Move.Piece = piece_White_Queen;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = G5;
+    MakeMove(&MoveData, &GameState, Move);
+
+    Move.Piece = piece_White_King_Knight;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = E6;
+    MakeMove(&MoveData, &GameState, Move);
+
+    Move.Piece = piece_White_King_Bishop;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = F6;
+    MakeMove(&MoveData, &GameState, Move);
+
+    Flag_Unset(GameState.Flags, Whose_Turn_Flag);
+#elif 1
+    /* NOTE: Test castling for black */
+    Move.Piece = piece_Black_Queen_Knight;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = E5;
+    MakeMove(&MoveData, &GameState, Move);
+
+    Move.Piece = piece_Black_Queen_Bishop;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = F5;
+    MakeMove(&MoveData, &GameState, Move);
+
+    Move.Piece = piece_Black_Queen;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = G5;
+    MakeMove(&MoveData, &GameState, Move);
+
+    Move.Piece = piece_Black_King_Knight;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = E6;
+    MakeMove(&MoveData, &GameState, Move);
+
+    Move.Piece = piece_Black_King_Bishop;
+    Move.BeginSquare = GameState.Piece[Move.Piece];
+    Move.EndSquare = F6;
+    MakeMove(&MoveData, &GameState, Move);
+
+    Flag_Set(GameState.Flags, Whose_Turn_Flag);
+#else
+    /* NOTE: Test un-passant for white. */
     Move.Piece = piece_White_Pawn_E;
     Move.BeginSquare = GameState.Piece[Move.Piece];
     Move.EndSquare = E6;
@@ -591,14 +852,8 @@ int main(void)
     Move.BeginSquare = GameState.Piece[Move.Piece];
     Move.EndSquare = D5;
     MakeMove(&MoveData, &GameState, Move);
-
-    /* Move.Piece = piece_Black_Queen; */
-    /* Move.BeginSquare = GameState.Piece[Move.Piece]; */
-    /* Move.Square = D5; */
-    /* MakeMove(&MoveData, &GameState, Move); */
 #endif
 
-    /* GameState.Flags = Flag_Set(GameState.Flags, Whose_Turn_Flag); */
 
     DebugPrintSquares(MoveData.Squares);
 
