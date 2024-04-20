@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#include "./clibs/raylib.h"
+
 #define u8 uint8_t
 #define u32 uint32_t
 #define b32 uint32_t
@@ -181,15 +183,29 @@ typedef struct
 
 typedef struct
 {
-    move Potentials[Max_Potential_Moves];
-    s32 PotentialCount;
-
+    /* TODO: Squares should probably just live in app_state, and then delete move_data. */
     u8 Squares[64];
 } move_data;
 
+struct game_tree
+{
+    game_state State;
+    struct game_tree *NextSibling;
+    struct game_tree *FirstChild;
+};
+
+typedef struct game_tree game_tree;
+
+#define Game_Tree_Node_Pool_Size 2048
+
 typedef struct
 {
-} move_result;
+    game_tree *GameTreeRoot;
+    game_tree *GameTreeCurrent;
+    game_tree *GameTreeFreeList;
+    s32 GameTreeNodePoolIndex;
+    game_tree GameTreeNodePool[Game_Tree_Node_Pool_Size];
+} app_state;
 
 #if DEBUG
 #define Assert(p) Assert_(p, __FILE__, __LINE__)
@@ -207,444 +223,21 @@ internal void Assert_(b32 Proposition, char *FilePath, s32 LineNumber)
 #define Assert(p)
 #endif
 
-internal void AddPotential(move_data *MoveData, game_state *GameState, piece Piece, square EndSquare, move_type MoveType)
+internal game_tree *PushGameTree(app_state *AppState)
 {
-    b32 IsCastleMove = MoveType == move_type_QueenCastle || MoveType == move_type_KingCastle;
-    Assert(Is_Valid_Piece(Piece));
-    Assert(IsCastleMove || Is_Valid_Square(EndSquare));
+    game_tree *GameTree = 0;
 
-    square BeginSquare = GameState->Piece[Piece];
-
-    Assert(Is_Valid_Square(BeginSquare));
-
-    if (MoveData->PotentialCount < Max_Potential_Moves)
+    if (AppState->GameTreeNodePoolIndex < Game_Tree_Node_Pool_Size)
     {
-        MoveData->Potentials[MoveData->PotentialCount].Type = MoveType;
-        MoveData->Potentials[MoveData->PotentialCount].Piece = Piece;
-        MoveData->Potentials[MoveData->PotentialCount].BeginSquare = BeginSquare;
-        MoveData->Potentials[MoveData->PotentialCount].EndSquare = EndSquare;
-        ++MoveData->PotentialCount;
-    }
-}
-
-internal void Look(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 RowOffset, u8 ColOffset, u8 MaxLength)
-{
-    Assert(RowOffset || ColOffset);
-
-    u8 PieceColor = Get_Piece_Color(Piece);
-    u8 CurrentRow = Row + RowOffset;
-    u8 CurrentCol = Col + ColOffset;
-    u8 TotalLength = 0;
-
-    for (;;)
-    {
-        b32 PositionInBounds = (CurrentRow >= 0 && CurrentRow < 8 &&
-                                CurrentCol >= 0 && CurrentCol < 8);
-        b32 CanReach = TotalLength < MaxLength;
-
-        if (!(PositionInBounds && CanReach))
-        {
-            break;
-        }
-
-        s32 NewSquare = CurrentRow* 8 + CurrentCol;
-        s32 TargetPiece = MoveData->Squares[NewSquare];
-
-        if (Is_Valid_Piece(TargetPiece))
-        {
-            if (Get_Piece_Color(TargetPiece) != PieceColor)
-            {
-                AddPotential(MoveData, GameState, Piece, NewSquare, move_type_Move);
-            }
-
-            break;
-        }
-        else
-        {
-            AddPotential(MoveData, GameState, Piece, NewSquare, move_type_Move);
-        }
-
-        CurrentRow += RowOffset;
-        CurrentCol += ColOffset;
-        TotalLength += 1;
-    }
-}
-
-internal void LookRight(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
-{
-    Look(MoveData, GameState, Piece, Row, Col, 0, 1, MaxLength);
-}
-
-internal void LookUp(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
-{
-    Look(MoveData, GameState, Piece, Row, Col, 1, 0, MaxLength);
-}
-
-internal void LookLeft(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
-{
-    Look(MoveData, GameState, Piece, Row, Col, 0, -1, MaxLength);
-}
-
-internal void LookDown(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
-{
-    Look(MoveData, GameState, Piece, Row, Col, -1, 0, MaxLength);
-}
-
-internal void LookUpRight(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
-{
-    Look(MoveData, GameState, Piece, Row, Col, 1, 1, MaxLength);
-}
-
-internal void LookUpLeft(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
-{
-    Look(MoveData, GameState, Piece, Row, Col, 1, -1, MaxLength);
-}
-
-internal void LookDownLeft(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
-{
-    Look(MoveData, GameState, Piece, Row, Col, -1, -1, MaxLength);
-}
-
-internal void LookDownRight(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
-{
-    Look(MoveData, GameState, Piece, Row, Col, -1, 1, MaxLength);
-}
-
-internal void LookAllDirections(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
-{
-    LookRight(MoveData, GameState, Piece, Row, Col, MaxLength);
-    LookUpRight(MoveData, GameState, Piece, Row, Col, MaxLength);
-    LookUp(MoveData, GameState, Piece, Row, Col, MaxLength);
-    LookUpLeft(MoveData, GameState, Piece, Row, Col, MaxLength);
-    LookLeft(MoveData, GameState, Piece, Row, Col, MaxLength);
-    LookDownLeft(MoveData, GameState, Piece, Row, Col, MaxLength);
-    LookDown(MoveData, GameState, Piece, Row, Col, MaxLength);
-    LookDownRight(MoveData, GameState, Piece, Row, Col, MaxLength);
-}
-
-internal void LookPawn(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col)
-{
-    u8 PieceColor = Get_Piece_Color(Piece);
-    s8 Multiplier = 1;
-    u8 StartingRow = 1;
-    u8 EnPassantRow = 5;
-
-    if (Is_Black_Piece(Piece))
-    {
-        Multiplier = -1;
-        StartingRow = 6;
-        EnPassantRow = 2;
-    }
-
-    /* NOTE: Move forward */
-    for (s32 I = 1; I < 3; ++I)
-    {
-        if (Row != StartingRow && I == 2)
-        {
-            break;
-        }
-
-        s8 Offset = I * Multiplier;
-        u8 CurrentRow = Row + Offset;
-
-        square Square = Get_Square_Index(CurrentRow, Col);
-        s32 TargetPiece = MoveData->Squares[Square];
-
-        if (!Is_Valid_Piece(TargetPiece))
-        {
-            AddPotential(MoveData, GameState, Piece, Square, move_type_Move);
-        }
-        else
-        {
-            break;
-        }
-    }
-
-    /* NOTE: Captures */
-    for (s32 I = -1; I < 2; I += 2)
-    {
-        s8 Offset = Multiplier;
-        u8 CurrentRow = Row + Offset;
-        u8 CurrentCol = Col + I;
-
-        square Square = Get_Square_Index(CurrentRow, CurrentCol);
-        s32 TargetPiece = MoveData->Squares[Square];
-
-        if (Is_Valid_Piece(TargetPiece) && Get_Piece_Color(TargetPiece) != PieceColor)
-        {
-            AddPotential(MoveData, GameState, Piece, Square, move_type_Move);
-        }
-    }
-
-    /* NOTE: En-passant */
-    if (Row == EnPassantRow)
-    {
-        for (s32 I = -1; I < 2; I += 2)
-        {
-            u8 CurrentCol = Col + I;
-
-            piece MovePieceType = PieceType[GameState->LastMove.Piece];
-
-            s8 BeginRow = GameState->LastMove.BeginSquare / 8;
-            s8 EndRow = GameState->LastMove.EndSquare / 8;
-
-            s8 BeginCol = GameState->LastMove.BeginSquare % 8;
-            s8 EndCol = GameState->LastMove.EndSquare % 8;
-
-            b32 IsPawnMove = MovePieceType == piece_type_Pawn;
-            b32 WasTwoSquareMove = Multiplier * (EndRow - BeginRow) == -2;
-            b32 LastMoveOnSameCol = (BeginCol == EndCol) && (EndCol == CurrentCol);
-
-            if (IsPawnMove && WasTwoSquareMove && LastMoveOnSameCol)
-            {
-                square CaptureSquare = Get_Square_Index(Row + Multiplier, CurrentCol);
-                AddPotential(MoveData, GameState, Piece, CaptureSquare, move_type_EnPassant);
-            }
-        }
-    }
-}
-
-internal void LookKnight(move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col)
-{
-    s8 RowColOffsets[8][2] = {{1,2},{2,1},{2,-1},{1,-2},{-1,-2},{-2,-1},{-2,1},{-1,2}};
-    u8 PieceColor = Get_Piece_Color(Piece);
-
-    for (s32 I = 0; I < 8; ++I)
-    {
-        s8 TargetRow = Row + RowColOffsets[I][0];
-        s8 TargetCol = Col + RowColOffsets[I][1];
-
-        if (Is_Valid_Row_Col(TargetRow, TargetCol))
-        {
-            s32 NewSquare = TargetRow * 8 + TargetCol;
-            s32 TargetPiece = MoveData->Squares[NewSquare];
-
-            if (Is_Valid_Piece(TargetPiece))
-            {
-                if (Get_Piece_Color(TargetPiece) != PieceColor)
-                {
-                    AddPotential(MoveData, GameState, Piece, NewSquare, move_type_Move);
-                }
-            }
-            else
-            {
-                AddPotential(MoveData, GameState, Piece, NewSquare, move_type_Move);
-            }
-        }
-    }
-}
-
-internal void LookCastle(move_data *MoveData, game_state *GameState, piece Piece)
-{
-    u8 KingPosition;
-
-    if (Is_White_Piece(Piece))
-    {
-        KingPosition = E1;
-        Assert(GameState->Piece[Piece] == KingPosition);
-
-        if (Flag_Get(GameState->Flags, White_Queen_Side_Castle_Flag))
-        {
-            Assert(GameState->Piece[piece_White_Queen_Rook] == A1);
-
-            b32 B1Open = !Is_Valid_Piece(MoveData->Squares[B1]);
-            b32 C1Open = !Is_Valid_Piece(MoveData->Squares[C1]);
-            b32 D1Open = !Is_Valid_Piece(MoveData->Squares[D1]);
-
-            if (B1Open && C1Open && D1Open)
-            {
-                printf("add white queen side castle potential\n");
-                AddPotential(MoveData, GameState, Piece, 255, move_type_QueenCastle);
-            }
-        }
-
-        if (Flag_Get(GameState->Flags, White_King_Side_Castle_Flag))
-        {
-            Assert(GameState->Piece[piece_White_King_Rook] == H1);
-
-            b32 F1Open = !Is_Valid_Piece(MoveData->Squares[F1]);
-            b32 G1Open = !Is_Valid_Piece(MoveData->Squares[G1]);
-
-            if (F1Open && G1Open)
-            {
-                AddPotential(MoveData, GameState, Piece, 255, move_type_KingCastle);
-            }
-        }
+        GameTree = AppState->GameTreeNodePool + AppState->GameTreeNodePoolIndex;
+        ++AppState->GameTreeNodePoolIndex;
     }
     else
     {
-        KingPosition = E8;
-        Assert(GameState->Piece[Piece] == KingPosition);
-
-        if (Flag_Get(GameState->Flags, Black_Queen_Side_Castle_Flag))
-        {
-            Assert(GameState->Piece[piece_Black_Queen_Rook] == A8);
-
-            b32 B8Open = !Is_Valid_Piece(MoveData->Squares[B8]);
-            b32 C8Open = !Is_Valid_Piece(MoveData->Squares[C8]);
-            b32 D8Open = !Is_Valid_Piece(MoveData->Squares[D8]);
-
-            if (B8Open && C8Open && D8Open)
-            {
-                AddPotential(MoveData, GameState, Piece, 255, move_type_QueenCastle);
-            }
-        }
-
-        if (Flag_Get(GameState->Flags, Black_King_Side_Castle_Flag))
-        {
-            Assert(GameState->Piece[piece_Black_King_Rook] == H8);
-
-            b32 F8Open = !Is_Valid_Piece(MoveData->Squares[F8]);
-            b32 G8Open = !Is_Valid_Piece(MoveData->Squares[G8]);
-
-            if (F8Open && G8Open)
-            {
-                AddPotential(MoveData, GameState, Piece, 255, move_type_KingCastle);
-            }
-        }
-    }
-}
-
-internal void GeneratePotentials(move_data *MoveData, game_state *GameState)
-{
-    MoveData->PotentialCount = 0;
-
-    s32 Start;
-    b32 TurnFlag = Flag_Get(GameState->Flags, Whose_Turn_Flag);
-
-    if (Is_White_Turn(TurnFlag))
-    {
-        Start = piece_White_Queen_Rook;
-    }
-    else
-    {
-        Start = piece_Black_Pawn_A;
+        printf("Error: Pushing game_tree.\n");
     }
 
-    s32 End = Start + 16;
-
-    for (s32 I = Start; I < End; ++I)
-    {
-        piece Piece = I;
-        u8 Square = GameState->Piece[I];
-        u8 Row = Square / 8;
-        u8 Col = Square % 8;
-
-        if (Is_Valid_Square(Square))
-        {
-            switch (PieceType[I])
-            {
-            case piece_type_Rook:
-            {
-                LookRight(MoveData, GameState, Piece, Row, Col, 8);
-                LookDown(MoveData, GameState, Piece, Row, Col, 8);
-                LookLeft(MoveData, GameState, Piece, Row, Col, 8);
-                LookUp(MoveData, GameState, Piece, Row, Col, 8);
-            } break;
-            case piece_type_Knight:
-            {
-                LookKnight(MoveData, GameState, Piece, Row, Col);
-            } break;
-            case piece_type_Bishop:
-            {
-                LookUpRight(MoveData, GameState, Piece, Row, Col, 8);
-                LookUpLeft(MoveData, GameState, Piece, Row, Col, 8);
-                LookDownLeft(MoveData, GameState, Piece, Row, Col, 8);
-                LookDownRight(MoveData, GameState, Piece, Row, Col, 8);
-            } break;
-            case piece_type_Queen:
-            {
-                LookAllDirections(MoveData, GameState, Piece, Row, Col, 8);
-            } break;
-            case piece_type_King:
-            {
-                LookAllDirections(MoveData, GameState, Piece, Row, Col, 1);
-                LookCastle(MoveData, GameState, Piece);
-            } break;
-            case piece_type_Pawn:
-            {
-                LookPawn(MoveData, GameState, Piece, Row, Col);
-            } break;
-            default:
-            {
-                Assert(!"Unknown piece type\n");
-            } break;
-            }
-        }
-    }
-}
-
-internal void InitializeGameState(game_state *GameState)
-{
-    GameState->Flags = 0;
-    Flag_Set(GameState->Flags, White_Queen_Side_Castle_Flag);
-    Flag_Set(GameState->Flags, White_King_Side_Castle_Flag);
-    Flag_Set(GameState->Flags, Black_Queen_Side_Castle_Flag);
-    Flag_Set(GameState->Flags, Black_King_Side_Castle_Flag);
-
-    for (s32 I = 0; I < 2; ++I)
-    {
-        s32 PieceOffset = 48 * I;
-
-        for (s32 J = 0; J < 16; ++J)
-        {
-            s32 SquareIndex = J + PieceOffset;
-            s32 PieceIndex = (16 * I) + J;
-
-            GameState->Piece[PieceIndex] = SquareIndex;
-        }
-    }
-}
-
-internal void InitializeSquares(square *Squares, game_state *GameState)
-{
-    for (s32 I = 0; I < 64; ++I)
-    {
-        Squares[I] = piece_Null;
-    }
-
-    for (s32 I = 0; I < piece_Count; ++I)
-    {
-        s32 Square = GameState->Piece[I];
-
-        if (Is_Valid_Square(Square))
-        {
-            Squares[Square] = I;
-        }
-    }
-}
-
-internal void DebugPrintSquares(square *Squares)
-{
-    for (s32 Row = 0; Row < 8; ++Row)
-    {
-        for (s32 Col = 0; Col < 8; ++Col)
-        {
-            s32 SquareIndex = (7 - Row) * 8 + Col;
-            s32 Piece = Squares[SquareIndex];
-            char SquareDisplay = '-';
-
-            if (Is_Valid_Piece(Piece))
-            {
-                SquareDisplay = PieceDisplayTable[Piece];
-            }
-
-            printf("%c ", SquareDisplay);
-        }
-        printf("\n");
-    }
-    printf("\n");
-}
-
-internal void CopyGameState(game_state *Source, game_state *Destination)
-{
-    Destination->Flags = Source->Flags;
-    Destination->LastMove = Source->LastMove;
-
-    for (s32 I = 0; I < piece_Count; ++I)
-    {
-        Destination->Piece[I] = Source->Piece[I];
-    }
+    return GameTree;
 }
 
 internal void RemovePiece(move_data *MoveData, game_state *GameState, piece Piece)
@@ -671,6 +264,7 @@ internal void MakeMove(move_data *MoveData, game_state *GameState, move Move)
         GameState->Piece[Piece] = Move.EndSquare;
         MoveData->Squares[Move.EndSquare] = Piece;
     } break;
+    /* TODO: Compress castling code below. */
     case move_type_QueenCastle:
     {
         if (IsWhitePiece)
@@ -759,118 +353,562 @@ internal void MakeMove(move_data *MoveData, game_state *GameState, move Move)
     GameState->LastMove = Move;
 }
 
+internal void CopyGameState(game_state *Source, game_state *Destination)
+{
+    Destination->Flags = Source->Flags;
+    Destination->LastMove = Source->LastMove;
+
+    for (s32 I = 0; I < piece_Count; ++I)
+    {
+        Destination->Piece[I] = Source->Piece[I];
+    }
+}
+
+internal void InitializeSquares(square *Squares, game_state *GameState)
+{
+    for (s32 I = 0; I < 64; ++I)
+    {
+        Squares[I] = piece_Null;
+    }
+
+    for (s32 I = 0; I < piece_Count; ++I)
+    {
+        s32 Square = GameState->Piece[I];
+
+        if (Is_Valid_Square(Square))
+        {
+            Squares[Square] = I;
+        }
+    }
+}
+
+internal void AddPotential(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, square EndSquare, move_type MoveType)
+{
+    b32 IsCastleMove = MoveType == move_type_QueenCastle || MoveType == move_type_KingCastle;
+    Assert(Is_Valid_Piece(Piece));
+    Assert(IsCastleMove || Is_Valid_Square(EndSquare));
+
+    square BeginSquare = GameState->Piece[Piece];
+    Assert(Is_Valid_Square(BeginSquare));
+
+    move Move;
+    Move.Type = MoveType;
+    Move.Piece = Piece;
+    Move.BeginSquare = BeginSquare;
+    Move.EndSquare = EndSquare;
+
+    game_state NewGameState;
+    CopyGameState(GameState, &NewGameState);
+
+    MakeMove(MoveData, &NewGameState, Move);
+
+    game_tree *GameTree = PushGameTree(AppState);
+    GameTree->State = NewGameState;
+
+    if (GameTree)
+    {
+        if (!AppState->GameTreeCurrent)
+        {
+            AppState->GameTreeCurrent = GameTree;
+        }
+        else
+        {
+            GameTree->NextSibling = AppState->GameTreeCurrent;
+            AppState->GameTreeCurrent = GameTree;
+        }
+
+        AppState->GameTreeRoot->NextSibling = GameTree;
+    }
+    else
+    {
+        Assert(0);
+    }
+}
+
+/* TODO: Maybe bundle Piece, Row, Col, ... into a struct. */
+internal void Look(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 RowOffset, u8 ColOffset, u8 MaxLength)
+{
+    Assert(RowOffset || ColOffset);
+
+    u8 PieceColor = Get_Piece_Color(Piece);
+    u8 CurrentRow = Row + RowOffset;
+    u8 CurrentCol = Col + ColOffset;
+    u8 TotalLength = 0;
+
+    for (;;)
+    {
+        b32 PositionInBounds = (CurrentRow >= 0 && CurrentRow < 8 &&
+                                CurrentCol >= 0 && CurrentCol < 8);
+        b32 CanReach = TotalLength < MaxLength;
+
+        if (!(PositionInBounds && CanReach))
+        {
+            break;
+        }
+
+        s32 NewSquare = CurrentRow * 8 + CurrentCol;
+        s32 TargetPiece = MoveData->Squares[NewSquare];
+
+        if (Is_Valid_Piece(TargetPiece))
+        {
+            if (Get_Piece_Color(TargetPiece) != PieceColor)
+            {
+                AddPotential(AppState, MoveData, GameState, Piece, NewSquare, move_type_Move);
+            }
+
+            break;
+        }
+        else
+        {
+            AddPotential(AppState, MoveData, GameState, Piece, NewSquare, move_type_Move);
+        }
+
+        CurrentRow += RowOffset;
+        CurrentCol += ColOffset;
+        TotalLength += 1;
+    }
+}
+
+internal void LookRight(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+{
+    Look(AppState, MoveData, GameState, Piece, Row, Col, 0, 1, MaxLength);
+}
+
+internal void LookUp(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+{
+    Look(AppState, MoveData, GameState, Piece, Row, Col, 1, 0, MaxLength);
+}
+
+internal void LookLeft(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+{
+    Look(AppState, MoveData, GameState, Piece, Row, Col, 0, -1, MaxLength);
+}
+
+internal void LookDown(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+{
+    Look(AppState, MoveData, GameState, Piece, Row, Col, -1, 0, MaxLength);
+}
+
+internal void LookUpRight(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+{
+    Look(AppState, MoveData, GameState, Piece, Row, Col, 1, 1, MaxLength);
+}
+
+internal void LookUpLeft(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+{
+    Look(AppState, MoveData, GameState, Piece, Row, Col, 1, -1, MaxLength);
+}
+
+internal void LookDownLeft(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+{
+    Look(AppState, MoveData, GameState, Piece, Row, Col, -1, -1, MaxLength);
+}
+
+internal void LookDownRight(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+{
+    Look(AppState, MoveData, GameState, Piece, Row, Col, -1, 1, MaxLength);
+}
+
+internal void LookAllDirections(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+{
+    LookRight(AppState, MoveData, GameState, Piece, Row, Col, MaxLength);
+    LookUpRight(AppState, MoveData, GameState, Piece, Row, Col, MaxLength);
+    LookUp(AppState, MoveData, GameState, Piece, Row, Col, MaxLength);
+    LookUpLeft(AppState, MoveData, GameState, Piece, Row, Col, MaxLength);
+    LookLeft(AppState, MoveData, GameState, Piece, Row, Col, MaxLength);
+    LookDownLeft(AppState, MoveData, GameState, Piece, Row, Col, MaxLength);
+    LookDown(AppState, MoveData, GameState, Piece, Row, Col, MaxLength);
+    LookDownRight(AppState, MoveData, GameState, Piece, Row, Col, MaxLength);
+}
+
+internal void LookPawn(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col)
+{
+    u8 PieceColor = Get_Piece_Color(Piece);
+    s8 Multiplier = 1;
+    u8 StartingRow = 1;
+    u8 EnPassantRow = 5;
+
+    if (Is_Black_Piece(Piece))
+    {
+        Multiplier = -1;
+        StartingRow = 6;
+        EnPassantRow = 2;
+    }
+
+    /* NOTE: Move forward */
+    for (s32 I = 1; I < 3; ++I)
+    {
+        if (Row != StartingRow && I == 2)
+        {
+            break;
+        }
+
+        s8 Offset = I * Multiplier;
+        u8 CurrentRow = Row + Offset;
+
+        square Square = Get_Square_Index(CurrentRow, Col);
+        s32 TargetPiece = MoveData->Squares[Square];
+
+        if (!Is_Valid_Piece(TargetPiece))
+        {
+            AddPotential(AppState, MoveData, GameState, Piece, Square, move_type_Move);
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    /* NOTE: Captures */
+    for (s32 I = -1; I < 2; I += 2)
+    {
+        s8 Offset = Multiplier;
+        u8 CurrentRow = Row + Offset;
+        u8 CurrentCol = Col + I;
+
+        square Square = Get_Square_Index(CurrentRow, CurrentCol);
+        s32 TargetPiece = MoveData->Squares[Square];
+
+        if (Is_Valid_Piece(TargetPiece) && Get_Piece_Color(TargetPiece) != PieceColor)
+        {
+            AddPotential(AppState, MoveData, GameState, Piece, Square, move_type_Move);
+        }
+    }
+
+    /* NOTE: En-passant */
+    if (Row == EnPassantRow)
+    {
+        for (s32 I = -1; I < 2; I += 2)
+        {
+            u8 CurrentCol = Col + I;
+
+            piece MovePieceType = PieceType[GameState->LastMove.Piece];
+
+            s8 BeginRow = GameState->LastMove.BeginSquare / 8;
+            s8 EndRow = GameState->LastMove.EndSquare / 8;
+
+            s8 BeginCol = GameState->LastMove.BeginSquare % 8;
+            s8 EndCol = GameState->LastMove.EndSquare % 8;
+
+            b32 IsPawnMove = MovePieceType == piece_type_Pawn;
+            b32 WasTwoSquareMove = Multiplier * (EndRow - BeginRow) == -2;
+            b32 LastMoveOnSameCol = (BeginCol == EndCol) && (EndCol == CurrentCol);
+
+            if (IsPawnMove && WasTwoSquareMove && LastMoveOnSameCol)
+            {
+                square CaptureSquare = Get_Square_Index(Row + Multiplier, CurrentCol);
+                AddPotential(AppState, MoveData, GameState, Piece, CaptureSquare, move_type_EnPassant);
+            }
+        }
+    }
+}
+
+internal void LookKnight(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece, u8 Row, u8 Col)
+{
+    s8 RowColOffsets[8][2] = {{1,2},{2,1},{2,-1},{1,-2},{-1,-2},{-2,-1},{-2,1},{-1,2}};
+    u8 PieceColor = Get_Piece_Color(Piece);
+
+    for (s32 I = 0; I < 8; ++I)
+    {
+        s8 TargetRow = Row + RowColOffsets[I][0];
+        s8 TargetCol = Col + RowColOffsets[I][1];
+
+        if (Is_Valid_Row_Col(TargetRow, TargetCol))
+        {
+            s32 NewSquare = TargetRow * 8 + TargetCol;
+            s32 TargetPiece = MoveData->Squares[NewSquare];
+
+            if (Is_Valid_Piece(TargetPiece))
+            {
+                if (Get_Piece_Color(TargetPiece) != PieceColor)
+                {
+                    AddPotential(AppState, MoveData, GameState, Piece, NewSquare, move_type_Move);
+                }
+            }
+            else
+            {
+                AddPotential(AppState, MoveData, GameState, Piece, NewSquare, move_type_Move);
+            }
+        }
+    }
+}
+
+internal void DebugPrintSquares(square *Squares)
+{
+    for (s32 Row = 0; Row < 8; ++Row)
+    {
+        for (s32 Col = 0; Col < 8; ++Col)
+        {
+            s32 SquareIndex = (7 - Row) * 8 + Col;
+            s32 Piece = Squares[SquareIndex];
+            char SquareDisplay = '-';
+
+            if (Is_Valid_Piece(Piece))
+            {
+                SquareDisplay = PieceDisplayTable[Piece];
+            }
+
+            printf("%c ", SquareDisplay);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
+internal void LookCastle(app_state *AppState, move_data *MoveData, game_state *GameState, piece Piece)
+{
+    u8 KingPosition;
+
+    if (Is_White_Piece(Piece))
+    {
+        InitializeSquares(MoveData->Squares, GameState);
+        KingPosition = E1;
+        Assert(GameState->Piece[Piece] == KingPosition);
+
+        if (Flag_Get(GameState->Flags, White_Queen_Side_Castle_Flag))
+        {
+            Assert(GameState->Piece[piece_White_Queen_Rook] == A1);
+
+            b32 B1Open = !Is_Valid_Piece(MoveData->Squares[B1]);
+            b32 C1Open = !Is_Valid_Piece(MoveData->Squares[C1]);
+            b32 D1Open = !Is_Valid_Piece(MoveData->Squares[D1]);
+
+            if (B1Open && C1Open && D1Open)
+            {
+                AddPotential(AppState, MoveData, GameState, Piece, 255, move_type_QueenCastle);
+            }
+        }
+
+        InitializeSquares(MoveData->Squares, GameState);
+
+        if (Flag_Get(GameState->Flags, White_King_Side_Castle_Flag))
+        {
+            Assert(GameState->Piece[piece_White_King_Rook] == H1);
+
+            b32 F1Open = !Is_Valid_Piece(MoveData->Squares[F1]);
+            b32 G1Open = !Is_Valid_Piece(MoveData->Squares[G1]);
+
+            if (F1Open && G1Open)
+            {
+                AddPotential(AppState, MoveData, GameState, Piece, 255, move_type_KingCastle);
+            }
+        }
+    }
+    else
+    {
+        InitializeSquares(MoveData->Squares, GameState);
+        KingPosition = E8;
+        Assert(GameState->Piece[Piece] == KingPosition);
+        if (Flag_Get(GameState->Flags, Black_Queen_Side_Castle_Flag))
+        {
+            Assert(GameState->Piece[piece_Black_Queen_Rook] == A8);
+
+            b32 B8Open = !Is_Valid_Piece(MoveData->Squares[B8]);
+            b32 C8Open = !Is_Valid_Piece(MoveData->Squares[C8]);
+            b32 D8Open = !Is_Valid_Piece(MoveData->Squares[D8]);
+
+            if (B8Open && C8Open && D8Open)
+            {
+                AddPotential(AppState, MoveData, GameState, Piece, 255, move_type_QueenCastle);
+            }
+        }
+
+        InitializeSquares(MoveData->Squares, GameState);
+
+        if (Flag_Get(GameState->Flags, Black_King_Side_Castle_Flag))
+        {
+            Assert(GameState->Piece[piece_Black_King_Rook] == H8);
+
+            b32 F8Open = !Is_Valid_Piece(MoveData->Squares[F8]);
+            b32 G8Open = !Is_Valid_Piece(MoveData->Squares[G8]);
+
+            if (F8Open && G8Open)
+            {
+                AddPotential(AppState, MoveData, GameState, Piece, 255, move_type_KingCastle);
+            }
+        }
+    }
+}
+
+internal void GeneratePotentials(app_state *AppState, move_data *MoveData, game_state *GameState)
+{
+    s32 Start;
+    b32 TurnFlag = Flag_Get(GameState->Flags, Whose_Turn_Flag);
+
+    if (Is_White_Turn(TurnFlag))
+    {
+        Start = piece_White_Queen_Rook;
+    }
+    else
+    {
+        Start = piece_Black_Pawn_A;
+    }
+
+    s32 End = Start + 16;
+
+    for (s32 I = Start; I < End; ++I)
+    {
+        piece Piece = I;
+        u8 Square = GameState->Piece[I];
+        u8 Row = Square / 8;
+        u8 Col = Square % 8;
+
+        InitializeSquares(MoveData->Squares, GameState);
+
+        if (Is_Valid_Square(Square))
+        {
+            switch (PieceType[I])
+            {
+            case piece_type_Rook:
+            {
+                LookRight(AppState, MoveData, GameState, Piece, Row, Col, 8);
+                LookDown(AppState, MoveData, GameState, Piece, Row, Col, 8);
+                LookLeft(AppState, MoveData, GameState, Piece, Row, Col, 8);
+                LookUp(AppState, MoveData, GameState, Piece, Row, Col, 8);
+            } break;
+            case piece_type_Knight:
+            {
+                LookKnight(AppState, MoveData, GameState, Piece, Row, Col);
+            } break;
+            case piece_type_Bishop:
+            {
+                LookUpRight(AppState, MoveData, GameState, Piece, Row, Col, 8);
+                LookUpLeft(AppState, MoveData, GameState, Piece, Row, Col, 8);
+                LookDownLeft(AppState, MoveData, GameState, Piece, Row, Col, 8);
+                LookDownRight(AppState, MoveData, GameState, Piece, Row, Col, 8);
+            } break;
+            case piece_type_Queen:
+            {
+                LookAllDirections(AppState, MoveData, GameState, Piece, Row, Col, 8);
+            } break;
+            case piece_type_King:
+            {
+                LookAllDirections(AppState, MoveData, GameState, Piece, Row, Col, 1);
+                LookCastle(AppState, MoveData, GameState, Piece);
+            } break;
+            case piece_type_Pawn:
+            {
+                LookPawn(AppState, MoveData, GameState, Piece, Row, Col);
+            } break;
+            default:
+            {
+                Assert(!"Unknown piece type\n");
+            } break;
+            }
+        }
+    }
+}
+
+internal void InitializeGameState(game_state *GameState)
+{
+    GameState->Flags = 0;
+    Flag_Set(GameState->Flags, White_Queen_Side_Castle_Flag);
+    Flag_Set(GameState->Flags, White_King_Side_Castle_Flag);
+    Flag_Set(GameState->Flags, Black_Queen_Side_Castle_Flag);
+    Flag_Set(GameState->Flags, Black_King_Side_Castle_Flag);
+
+    for (s32 I = 0; I < 2; ++I)
+    {
+        s32 PieceOffset = 48 * I;
+
+        for (s32 J = 0; J < 16; ++J)
+        {
+            s32 SquareIndex = J + PieceOffset;
+            s32 PieceIndex = (16 * I) + J;
+
+            GameState->Piece[PieceIndex] = SquareIndex;
+        }
+    }
+}
+
+internal void MovePiece(game_state *GameState, move_data *MoveData, piece Piece, square Square)
+{
+    move Move = {0};
+
+    Move.Type = move_type_Move;
+    Move.Piece = Piece;
+    Move.BeginSquare = GameState->Piece[Move.Piece];
+    Move.EndSquare = Square;
+
+    MakeMove(MoveData, GameState, Move);
+}
+
+internal void SetupForTesting(game_state *GameState, move_data *MoveData)
+{
+#if 1
+    /* NOTE: Test un-passant for black. */
+    MovePiece(GameState, MoveData, piece_Black_Pawn_D, D3);
+    MovePiece(GameState, MoveData, piece_White_Pawn_E, E4);
+
+    GameState->Flags = Flag_Set(GameState->Flags, Whose_Turn_Flag);
+#elif 0
+    /* NOTE: Test castling for white. */
+    MovePiece(GameState, MoveData, piece_White_Queen_Knight, E5);
+    MovePiece(GameState, MoveData, piece_White_Queen_Bishop, F5);
+    MovePiece(GameState, MoveData, piece_White_Queen, G5);
+    MovePiece(GameState, MoveData, piece_White_King_Knight, E6);
+    MovePiece(GameState, MoveData, piece_White_King_Bishop, F6);
+
+    Flag_Unset(GameState.Flags, Whose_Turn_Flag);
+#elif 0
+    /* NOTE: Test castling for black */
+    MovePiece(GameState, MoveData, piece_Black_Queen_Knight, E5);
+    MovePiece(GameState, MoveData, piece_Black_Queen_Bishop, F5);
+    MovePiece(GameState, MoveData, piece_Black_Queen, G5);
+    MovePiece(GameState, MoveData, piece_Black_King_Knight, E6);
+    MovePiece(GameState, MoveData, piece_Black_King_Bishop, F6);
+
+    Flag_Set(GameState->Flags, Whose_Turn_Flag);
+#else
+    /* NOTE: Test un-passant for white. */
+    MovePiece(GameState, MoveData, piece_White_Pawn_E, E6);
+    MovePiece(GameState, MoveData, piece_Black_Pawn_D, D5);
+#endif
+}
+
 int main(void)
 {
     int Result = 0;
 
+    app_state AppState = {0};
     game_state GameState;
     move_data MoveData = {0};
+    game_tree GameTree = {0};
 
     InitializeGameState(&GameState);
     InitializeSquares(MoveData.Squares, &GameState);
 
-    move Move = {0};
-    Move.Type = move_type_Move;
+    SetupForTesting(&GameState, &MoveData);
+    GameTree.State = GameState;
 
-#if 0
-    /* NOTE: Test un-passant for black. */
-    Move.Piece = piece_Black_Pawn_D;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = D3;
-    MakeMove(&MoveData, &GameState, Move);
+    AppState.GameTreeRoot = &GameTree;
 
-    Move.Piece = piece_White_Pawn_E;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = E4;
-    MakeMove(&MoveData, &GameState, Move);
+    GeneratePotentials(&AppState, &MoveData, &GameState);
 
-    GameState.Flags = Flag_Set(GameState.Flags, Whose_Turn_Flag);
-#elif 0
-    /* NOTE: Test castling for white. */
-    Move.Piece = piece_White_Queen_Knight;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = E5;
-    MakeMove(&MoveData, &GameState, Move);
+    { /* Debug print out potential states. */
+        game_tree *PreviousNode = 0;
+        game_tree *CurrentNode = AppState.GameTreeRoot;
 
-    Move.Piece = piece_White_Queen_Bishop;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = F5;
-    MakeMove(&MoveData, &GameState, Move);
-
-    Move.Piece = piece_White_Queen;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = G5;
-    MakeMove(&MoveData, &GameState, Move);
-
-    Move.Piece = piece_White_King_Knight;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = E6;
-    MakeMove(&MoveData, &GameState, Move);
-
-    Move.Piece = piece_White_King_Bishop;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = F6;
-    MakeMove(&MoveData, &GameState, Move);
-
-    Flag_Unset(GameState.Flags, Whose_Turn_Flag);
-#elif 1
-    /* NOTE: Test castling for black */
-    Move.Piece = piece_Black_Queen_Knight;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = E5;
-    MakeMove(&MoveData, &GameState, Move);
-
-    Move.Piece = piece_Black_Queen_Bishop;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = F5;
-    MakeMove(&MoveData, &GameState, Move);
-
-    Move.Piece = piece_Black_Queen;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = G5;
-    MakeMove(&MoveData, &GameState, Move);
-
-    Move.Piece = piece_Black_King_Knight;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = E6;
-    MakeMove(&MoveData, &GameState, Move);
-
-    Move.Piece = piece_Black_King_Bishop;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = F6;
-    MakeMove(&MoveData, &GameState, Move);
-
-    Flag_Set(GameState.Flags, Whose_Turn_Flag);
-#else
-    /* NOTE: Test un-passant for white. */
-    Move.Piece = piece_White_Pawn_E;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = E6;
-    MakeMove(&MoveData, &GameState, Move);
-
-    Move.Piece = piece_Black_Pawn_D;
-    Move.BeginSquare = GameState.Piece[Move.Piece];
-    Move.EndSquare = D5;
-    MakeMove(&MoveData, &GameState, Move);
-#endif
-
-
-    DebugPrintSquares(MoveData.Squares);
-
-#if 1
-    GeneratePotentials(&MoveData, &GameState);
-
-    for (s32 I = 0; I < MoveData.PotentialCount; ++I)
-    {
-        game_state PotentialState = {0};
-        move Move = MoveData.Potentials[I];
-
-        CopyGameState(&GameState, &PotentialState);
+        game_state PotentialState = CurrentNode->State;
         InitializeSquares(MoveData.Squares, &PotentialState);
-        MakeMove(&MoveData, &PotentialState, Move);
         DebugPrintSquares(MoveData.Squares);
+
+        do
+        {
+            while (CurrentNode->NextSibling)
+            {
+                PreviousNode = CurrentNode;
+                CurrentNode = CurrentNode->NextSibling;
+            }
+
+            game_state PotentialState = CurrentNode->State;
+            InitializeSquares(MoveData.Squares, &PotentialState);
+            DebugPrintSquares(MoveData.Squares);
+
+            PreviousNode->NextSibling = 0;
+            CurrentNode = AppState.GameTreeRoot;
+        } while (CurrentNode->NextSibling);
     }
-#endif
 
     return Result;
 }
