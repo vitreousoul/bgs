@@ -7,16 +7,17 @@
 
 #include "./clibs/raylib.h"
 
-#define u8 uint8_t
-#define u32 uint32_t
-#define b32 uint32_t
-#define s8 int8_t
-#define s32 int32_t
+#define u8   uint8_t
+#define u32  uint32_t
+#define b32  uint32_t
+#define s8   int8_t
+#define s32  int32_t
 
-#define global_variable static
-#define internal static
+#define global_variable  static
+#define internal         static
 
 #define ArrayCount(a) (sizeof(a) / sizeof((a)[0]))
+
 const s32 SCREEN_WIDTH = 960;
 const s32 SCREEN_HEIGHT = 540;
 const s32 TARGET_FPS = 30;
@@ -32,8 +33,6 @@ const Color DARK_SQUARE_COLOR = {58,70,56,255};
 const Color LIGHT_SQUARE_COLOR = {148,138,120,255};
 const Color SELECTED_SQUARE_COLOR = {105,85,205,59};
 const Color SELECTED_SQUARE_OUTLINE_COLOR = {100,20,100,255};
-
-/* global_variable double BOARD[BOARD_SIZE][BOARD_SIZE]; */
 
 #define PIECE_TEXTURE_SIZE 120
 
@@ -84,72 +83,58 @@ typedef enum
     piece_Black_King_Bishop,
     piece_Black_King_Knight,
     piece_Black_King_Rook,
+
     piece_Count,
     piece_Null,
 } piece_name;
 
-#define Black_Pawn_Offset {4,0}
-#define White_Pawn_Offset {4,PIECE_TEXTURE_SIZE+8}
-#define Black_Knight_Offset {PIECE_TEXTURE_SIZE+12,0}
-#define White_Knight_Offset {PIECE_TEXTURE_SIZE+12,PIECE_TEXTURE_SIZE+8}
-#define Black_Bishop_Offset {2*PIECE_TEXTURE_SIZE+20,0}
-#define White_Bishop_Offset {2*PIECE_TEXTURE_SIZE+20,PIECE_TEXTURE_SIZE+8}
-#define Black_Rook_Offset {3*PIECE_TEXTURE_SIZE+28,0}
-#define White_Rook_Offset {3*PIECE_TEXTURE_SIZE+28,PIECE_TEXTURE_SIZE+8}
-#define Black_Queen_Offset {4*PIECE_TEXTURE_SIZE+36,0}
-#define White_Queen_Offset {4*PIECE_TEXTURE_SIZE+36,PIECE_TEXTURE_SIZE+8}
-#define Black_King_Offset {5*PIECE_TEXTURE_SIZE+44,0}
-#define White_King_Offset {5*PIECE_TEXTURE_SIZE+44,PIECE_TEXTURE_SIZE+8}
+#define Black_Pawn_Offset    {4,0}
+#define White_Pawn_Offset    {4,PIECE_TEXTURE_SIZE+8}
+#define Black_Knight_Offset  {PIECE_TEXTURE_SIZE+12,0}
+#define White_Knight_Offset  {PIECE_TEXTURE_SIZE+12,PIECE_TEXTURE_SIZE+8}
+#define Black_Bishop_Offset  {2*PIECE_TEXTURE_SIZE+20,0}
+#define White_Bishop_Offset  {2*PIECE_TEXTURE_SIZE+20,PIECE_TEXTURE_SIZE+8}
+#define Black_Rook_Offset    {3*PIECE_TEXTURE_SIZE+28,0}
+#define White_Rook_Offset    {3*PIECE_TEXTURE_SIZE+28,PIECE_TEXTURE_SIZE+8}
+#define Black_Queen_Offset   {4*PIECE_TEXTURE_SIZE+36,0}
+#define White_Queen_Offset   {4*PIECE_TEXTURE_SIZE+36,PIECE_TEXTURE_SIZE+8}
+#define Black_King_Offset    {5*PIECE_TEXTURE_SIZE+44,0}
+#define White_King_Offset    {5*PIECE_TEXTURE_SIZE+44,PIECE_TEXTURE_SIZE+8}
 
 ivec2 PIECE_TEXTURE_OFFSET[piece_Count] = {
-    [piece_White_Queen_Rook] =    White_Rook_Offset,
-    [piece_White_Queen_Knight] =  White_Knight_Offset,
-    [piece_White_Queen_Bishop] =  White_Bishop_Offset,
-    [piece_White_Queen] =         White_Queen_Offset,
-    [piece_White_King] =          White_King_Offset,
-    [piece_White_King_Bishop] =   White_Bishop_Offset,
-    [piece_White_King_Knight] =   White_Knight_Offset,
-    [piece_White_King_Rook] =     White_Rook_Offset,
-    [piece_White_Pawn_A] =        White_Pawn_Offset,
-    [piece_White_Pawn_B] =        White_Pawn_Offset,
-    [piece_White_Pawn_C] =        White_Pawn_Offset,
-    [piece_White_Pawn_D] =        White_Pawn_Offset,
-    [piece_White_Pawn_E] =        White_Pawn_Offset,
-    [piece_White_Pawn_F] =        White_Pawn_Offset,
-    [piece_White_Pawn_G] =        White_Pawn_Offset,
-    [piece_White_Pawn_H] =        White_Pawn_Offset,
+    [piece_White_Queen_Rook]    = White_Rook_Offset,
+    [piece_White_Queen_Knight]  = White_Knight_Offset,
+    [piece_White_Queen_Bishop]  = White_Bishop_Offset,
+    [piece_White_Queen]         = White_Queen_Offset,
+    [piece_White_King]          = White_King_Offset,
+    [piece_White_King_Bishop]   = White_Bishop_Offset,
+    [piece_White_King_Knight]   = White_Knight_Offset,
+    [piece_White_King_Rook]     = White_Rook_Offset,
+    [piece_White_Pawn_A]        = White_Pawn_Offset,
+    [piece_White_Pawn_B]        = White_Pawn_Offset,
+    [piece_White_Pawn_C]        = White_Pawn_Offset,
+    [piece_White_Pawn_D]        = White_Pawn_Offset,
+    [piece_White_Pawn_E]        = White_Pawn_Offset,
+    [piece_White_Pawn_F]        = White_Pawn_Offset,
+    [piece_White_Pawn_G]        = White_Pawn_Offset,
+    [piece_White_Pawn_H]        = White_Pawn_Offset,
 
-    [piece_Black_Queen_Rook] =    Black_Rook_Offset,
-    [piece_Black_Queen_Knight] =  Black_Knight_Offset,
-    [piece_Black_Queen_Bishop] =  Black_Bishop_Offset,
-    [piece_Black_Queen] =         Black_Queen_Offset,
-    [piece_Black_King] =          Black_King_Offset,
-    [piece_Black_King_Bishop] =   Black_Bishop_Offset,
-    [piece_Black_King_Knight] =   Black_Knight_Offset,
-    [piece_Black_King_Rook] =     Black_Rook_Offset,
-    [piece_Black_Pawn_A] =        Black_Pawn_Offset,
-    [piece_Black_Pawn_B] =        Black_Pawn_Offset,
-    [piece_Black_Pawn_C] =        Black_Pawn_Offset,
-    [piece_Black_Pawn_D] =        Black_Pawn_Offset,
-    [piece_Black_Pawn_E] =        Black_Pawn_Offset,
-    [piece_Black_Pawn_F] =        Black_Pawn_Offset,
-    [piece_Black_Pawn_G] =        Black_Pawn_Offset,
-    [piece_Black_Pawn_H] =        Black_Pawn_Offset,
-};
-
-s32 PIECE_EXISTS[255] = {
-    ['p'] = 1,
-    ['P'] = 1,
-    ['k'] = 1,
-    ['K'] = 1,
-    ['q'] = 1,
-    ['Q'] = 1,
-    ['b'] = 1,
-    ['B'] = 1,
-    ['n'] = 1,
-    ['N'] = 1,
-    ['r'] = 1,
-    ['R'] = 1,
+    [piece_Black_Queen_Rook]    = Black_Rook_Offset,
+    [piece_Black_Queen_Knight]  = Black_Knight_Offset,
+    [piece_Black_Queen_Bishop]  = Black_Bishop_Offset,
+    [piece_Black_Queen]         = Black_Queen_Offset,
+    [piece_Black_King]          = Black_King_Offset,
+    [piece_Black_King_Bishop]   = Black_Bishop_Offset,
+    [piece_Black_King_Knight]   = Black_Knight_Offset,
+    [piece_Black_King_Rook]     = Black_Rook_Offset,
+    [piece_Black_Pawn_A]        = Black_Pawn_Offset,
+    [piece_Black_Pawn_B]        = Black_Pawn_Offset,
+    [piece_Black_Pawn_C]        = Black_Pawn_Offset,
+    [piece_Black_Pawn_D]        = Black_Pawn_Offset,
+    [piece_Black_Pawn_E]        = Black_Pawn_Offset,
+    [piece_Black_Pawn_F]        = Black_Pawn_Offset,
+    [piece_Black_Pawn_G]        = Black_Pawn_Offset,
+    [piece_Black_Pawn_H]        = Black_Pawn_Offset,
 };
 
 typedef enum
@@ -163,7 +148,7 @@ typedef enum
     piece_type_Count,
 } piece_type;
 
-/* NOTE: Is_###_Piece assumes piece indexes are splice by color,
+/* NOTE: Is_###_Piece assumes piece indexes are split by color,
    so all we have to do is check the most significant bit.
 */
 #define Get_Piece_Color(p) ((p) & (1 << 4))
@@ -224,13 +209,6 @@ global_variable u8 PieceType[piece_Count] = {
     [piece_Black_Pawn_H]        = piece_type_Pawn,
 };
 
-global_variable char PieceDisplayTable[piece_Count] = {
-    'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R',
-    'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P',
-    'p', 'p', 'p', 'p', 'p', 'p', 'p', 'p',
-    'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r',
-};
-
 #define Whose_Turn_Flag              (1 << 0)
 #define White_Queen_Side_Castle_Flag (1 << 1)
 #define White_King_Side_Castle_Flag  (1 << 2)
@@ -242,8 +220,11 @@ global_variable char PieceDisplayTable[piece_Count] = {
 #define Flag_Unset(flags, flag)  ((flags) = (flags) & ~(flag))
 #define Flag_Toggle(flags, flag)  (Flag_Get((flags), (flag)) ? Flag_Unset((flags), (flag)) : Flag_Set((flags), (flag)))
 
-#define Is_White_Turn(v) ((v) == 0)
-#define Is_Black_Turn(v) ((v) == 1)
+#define Is_White_Turn(GameState) (Flag_Get(GameState->Flags, Whose_Turn_Flag) == 0)
+#define Is_Black_Turn(GameState) (Flag_Get(GameState->Flags, Whose_Turn_Flag) != 0)
+
+#define White_To_Move(GameState) Flag_Unset(GameState->Flags, Whose_Turn_Flag)
+#define Black_To_Move(GameState) Flag_Set(GameState->Flags, Whose_Turn_Flag)
 
 typedef enum
 {
@@ -269,20 +250,14 @@ typedef struct
     u8 Piece[piece_Count];
 } game_state;
 
-#define Max_Potential_Moves \
-    (8 * 4 + 2 * 14 + 2 * 8  + 2 * 14 + 28    + 8)
-/*   Pawns   Rooks    Knights  Bishops  Queen   King*/
-
 struct game_tree
 {
-    game_state State;
     struct game_tree *NextSibling;
     struct game_tree *FirstChild;
+    game_state State;
 };
 
 typedef struct game_tree game_tree;
-
-#define Game_Tree_Node_Pool_Size 2048
 
 typedef struct
 {
@@ -294,11 +269,13 @@ typedef struct
     Texture2D ChessPieceTexture;
 } ui;
 
+#define Game_Tree_Node_Pool_Size 2048
+
 typedef struct
 {
     game_tree *GameTreeRoot;
     game_tree *GameTreeCurrent;
-    game_tree *GameTreeFreeList;
+    game_tree *FreeGameTree;
     ui Ui;
     s32 GameTreeNodePoolIndex;
     u8 Squares[64];
@@ -344,12 +321,24 @@ internal void RemovePiece(app_state *AppState, game_state *GameState, piece Piec
     GameState->Piece[Piece] = square_Null;
 }
 
+internal void MovePieceToSquare(app_state *AppState, game_state *GameState, piece Piece, square Square)
+{
+    AppState->Squares[GameState->Piece[Piece]] = piece_Null;
+    GameState->Piece[Piece] = Square;
+    AppState->Squares[Square] = Piece;
+}
+
 internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
 {
     piece Piece = Move.Piece;
     b32 IsWhitePiece = Is_White_Piece(Piece);
 
-    AppState->Squares[GameState->Piece[Piece]] = piece_Null;
+    {
+        b32 IsWhiteTurn = Is_White_Turn(GameState);
+        b32 WhitePieceAndTurn = IsWhitePiece && IsWhiteTurn;
+        b32 BlackPieceAndTurn = !(IsWhitePiece || IsWhiteTurn);
+        Assert(WhitePieceAndTurn || BlackPieceAndTurn);
+    }
 
     switch (Move.Type)
     {
@@ -359,54 +348,33 @@ internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
     } /* Fall through */
     case move_type_Move:
     {
-        GameState->Piece[Piece] = Move.EndSquare;
-        AppState->Squares[Move.EndSquare] = Piece;
+        MovePieceToSquare(AppState, GameState, Piece, Move.EndSquare);
     } break;
     /* TODO: Compress castling code below. */
     case move_type_QueenCastle:
     {
         if (IsWhitePiece)
         {
-            AppState->Squares[GameState->Piece[piece_White_Queen_Rook]] = piece_Null;
-            GameState->Piece[piece_White_Queen_Rook] = D1;
-            AppState->Squares[D1] = piece_White_Queen_Rook;
-
-            AppState->Squares[GameState->Piece[piece_White_King]] = piece_Null;
-            GameState->Piece[piece_White_King] = C1;
-            AppState->Squares[C1] = piece_White_King;
+            MovePieceToSquare(AppState, GameState, piece_White_Queen_Rook, D1);
+            MovePieceToSquare(AppState, GameState, piece_White_King, C1);
         }
         else
         {
-            AppState->Squares[GameState->Piece[piece_Black_Queen_Rook]] = piece_Null;
-            GameState->Piece[piece_Black_Queen_Rook] = D8;
-            AppState->Squares[D8] = piece_Black_Queen_Rook;
-
-            AppState->Squares[GameState->Piece[piece_Black_King]] = piece_Null;
-            GameState->Piece[piece_Black_King] = C8;
-            AppState->Squares[C8] = piece_Black_King;
+            MovePieceToSquare(AppState, GameState, piece_Black_Queen_Rook, D8);
+            MovePieceToSquare(AppState, GameState, piece_Black_King, C8);
         }
     } break;
     case move_type_KingCastle:
     {
         if (IsWhitePiece)
         {
-            AppState->Squares[GameState->Piece[piece_White_King_Rook]] = piece_Null;
-            GameState->Piece[piece_White_King_Rook] = F1;
-            AppState->Squares[F1] = piece_White_King_Rook;
-
-            AppState->Squares[GameState->Piece[piece_White_King]] = piece_Null;
-            GameState->Piece[piece_White_King] = G1;
-            AppState->Squares[G1] = piece_White_King;
+            MovePieceToSquare(AppState, GameState, piece_White_King_Rook, F1);
+            MovePieceToSquare(AppState, GameState, piece_White_King, G1);
         }
         else
         {
-            AppState->Squares[GameState->Piece[piece_Black_King_Rook]] = piece_Null;
-            GameState->Piece[piece_Black_King_Rook] = F8;
-            AppState->Squares[F8] = piece_Black_King_Rook;
-
-            AppState->Squares[GameState->Piece[piece_Black_King]] = piece_Null;
-            GameState->Piece[piece_Black_King] = G8;
-            AppState->Squares[G8] = piece_Black_King;
+            MovePieceToSquare(AppState, GameState, piece_Black_King_Rook, F8);
+            MovePieceToSquare(AppState, GameState, piece_Black_King, G8);
         }
     } break;
     default:
@@ -414,8 +382,6 @@ internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
         Assert(!"Unknown move type");
     }
     }
-
-    Flag_Toggle(GameState->Flags, Whose_Turn_Flag);
 
     switch (Piece)
     {
@@ -448,6 +414,7 @@ internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
     default: break;
     }
 
+    Flag_Toggle(GameState->Flags, Whose_Turn_Flag);
     GameState->LastMove = Move;
 }
 
@@ -482,9 +449,11 @@ internal void InitializeSquares(square *Squares, game_state *GameState)
 
 internal void AddPotential(app_state *AppState, game_state *GameState, piece Piece, square EndSquare, move_type MoveType)
 {
-    b32 IsCastleMove = MoveType == move_type_QueenCastle || MoveType == move_type_KingCastle;
-    Assert(Is_Valid_Piece(Piece));
-    Assert(IsCastleMove || Is_Valid_Square(EndSquare));
+    {
+        b32 IsCastleMove = MoveType == move_type_QueenCastle || MoveType == move_type_KingCastle;
+        Assert(Is_Valid_Piece(Piece));
+        Assert(IsCastleMove || Is_Valid_Square(EndSquare));
+    }
 
     square BeginSquare = GameState->Piece[Piece];
     Assert(Is_Valid_Square(BeginSquare));
@@ -527,7 +496,7 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
     }
     else
     {
-        Assert(0);
+        Assert(!"TODO: Handle the case that we ran out of free game_trees\n");
     }
 }
 
@@ -539,7 +508,7 @@ internal void Look(app_state *AppState, game_state *GameState, piece Piece, u8 R
     u8 PieceColor = Get_Piece_Color(Piece);
     u8 CurrentRow = Row + RowOffset;
     u8 CurrentCol = Col + ColOffset;
-    u8 TotalLength = 0;
+    u8 TotalLength = 1;
 
     for (;;)
     {
@@ -559,6 +528,7 @@ internal void Look(app_state *AppState, game_state *GameState, piece Piece, u8 R
         {
             if (Get_Piece_Color(TargetPiece) != PieceColor)
             {
+                /* NOTE: Add potential capture. */
                 AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
             }
 
@@ -566,6 +536,7 @@ internal void Look(app_state *AppState, game_state *GameState, piece Piece, u8 R
         }
         else
         {
+            /* NOTE: Add potential to an empty square. */
             AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
         }
 
@@ -617,14 +588,14 @@ internal void LookDownRight(app_state *AppState, game_state *GameState, piece Pi
 
 internal void LookAllDirections(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
 {
-    LookRight(AppState, GameState, Piece, Row, Col, MaxLength);
-    LookUpRight(AppState, GameState, Piece, Row, Col, MaxLength);
-    LookUp(AppState, GameState, Piece, Row, Col, MaxLength);
-    LookUpLeft(AppState, GameState, Piece, Row, Col, MaxLength);
-    LookLeft(AppState, GameState, Piece, Row, Col, MaxLength);
-    LookDownLeft(AppState, GameState, Piece, Row, Col, MaxLength);
-    LookDown(AppState, GameState, Piece, Row, Col, MaxLength);
-    LookDownRight(AppState, GameState, Piece, Row, Col, MaxLength);
+    LookRight(     AppState, GameState, Piece, Row, Col, MaxLength);
+    LookUpRight(   AppState, GameState, Piece, Row, Col, MaxLength);
+    LookUp(        AppState, GameState, Piece, Row, Col, MaxLength);
+    LookUpLeft(    AppState, GameState, Piece, Row, Col, MaxLength);
+    LookLeft(      AppState, GameState, Piece, Row, Col, MaxLength);
+    LookDownLeft(  AppState, GameState, Piece, Row, Col, MaxLength);
+    LookDown(      AppState, GameState, Piece, Row, Col, MaxLength);
+    LookDownRight( AppState, GameState, Piece, Row, Col, MaxLength);
 }
 
 internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col)
@@ -728,43 +699,24 @@ internal void LookKnight(app_state *AppState, game_state *GameState, piece Piece
             {
                 if (Get_Piece_Color(TargetPiece) != PieceColor)
                 {
+                    /* NOTE: Add potential capture. */
                     AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
                 }
             }
             else
             {
+                /* NOTE: Add potential to an empty square. */
                 AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
             }
         }
     }
 }
 
-internal void DebugPrintSquares(square *Squares)
-{
-    for (s32 Row = 0; Row < 8; ++Row)
-    {
-        for (s32 Col = 0; Col < 8; ++Col)
-        {
-            s32 SquareIndex = (7 - Row) * 8 + Col;
-            s32 Piece = Squares[SquareIndex];
-            char SquareDisplay = '-';
-
-            if (Is_Valid_Piece(Piece))
-            {
-                SquareDisplay = PieceDisplayTable[Piece];
-            }
-
-            printf("%c ", SquareDisplay);
-        }
-        printf("\n");
-    }
-    printf("\n");
-}
-
 internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece)
 {
     u8 KingPosition;
 
+    /* TODO: Compress the following code. */
     if (Is_White_Piece(Piece))
     {
         KingPosition = E1;
@@ -835,9 +787,8 @@ internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece
 internal void GeneratePotentials(app_state *AppState, game_state *GameState)
 {
     s32 Start;
-    b32 TurnFlag = Flag_Get(GameState->Flags, Whose_Turn_Flag);
 
-    if (Is_White_Turn(TurnFlag))
+    if (Is_White_Turn(GameState))
     {
         Start = piece_White_Queen_Rook;
     }
@@ -854,7 +805,6 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
         u8 Square = GameState->Piece[I];
         u8 Row = Square / 8;
         u8 Col = Square % 8;
-
 
         if (Is_Valid_Square(Square))
         {
@@ -922,7 +872,8 @@ internal void InitializeGameState(game_state *GameState)
     }
 }
 
-internal void MovePiece(app_state *AppState, game_state *GameState, piece Piece, square Square)
+/* NOTE: This can be used to perform illegal moves for debugging/testing purposes. */
+internal void DebugMovePiece(app_state *AppState, game_state *GameState, piece Piece, square Square)
 {
     move Move = {0};
 
@@ -936,83 +887,56 @@ internal void MovePiece(app_state *AppState, game_state *GameState, piece Piece,
 
 internal void SetupForTesting(app_state *AppState, game_state *GameState)
 {
-#if 1
+#if 0
     /* NOTE: Test un-passant for black. */
-    MovePiece(AppState, GameState, piece_Black_Pawn_D, D3);
-    MovePiece(AppState, GameState, piece_White_Pawn_E, E4);
+    Black_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_Black_Pawn_D, D3);
+
+    White_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_White_Pawn_E, E4);
 
     GameState->Flags = Flag_Set(GameState->Flags, Whose_Turn_Flag);
 #elif 0
     /* NOTE: Test castling for white. */
-    MovePiece(AppState, GameState, piece_White_Queen_Knight, E5);
-    MovePiece(AppState, GameState, piece_White_Queen_Bishop, F5);
-    MovePiece(AppState, GameState, piece_White_Queen, G5);
-    MovePiece(AppState, GameState, piece_White_King_Knight, E6);
-    MovePiece(AppState, GameState, piece_White_King_Bishop, F6);
+    White_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_White_Queen_Knight, E5);
 
-    Flag_Unset(GameState.Flags, Whose_Turn_Flag);
-#elif 0
+    White_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_White_Queen_Bishop, F5);
+
+    White_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_White_Queen, G5);
+
+    White_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_White_King_Knight, E6);
+
+    White_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_White_King_Bishop, F6);
+
+    White_To_Move(GameState);
+#elif 1
     /* NOTE: Test castling for black */
-    MovePiece(AppState, GameState, piece_Black_Queen_Knight, E5);
-    MovePiece(AppState, GameState, piece_Black_Queen_Bishop, F5);
-    MovePiece(AppState, GameState, piece_Black_Queen, G5);
-    MovePiece(AppState, GameState, piece_Black_King_Knight, E6);
-    MovePiece(AppState, GameState, piece_Black_King_Bishop, F6);
+    Black_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_Black_Queen_Knight, E5);
 
-    Flag_Set(GameState->Flags, Whose_Turn_Flag);
+    Black_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_Black_Queen_Bishop, F5);
+
+    Black_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_Black_Queen, G5);
+
+    Black_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_Black_King_Knight, E6);
+
+    Black_To_Move(GameState);
+    DebugMovePiece(AppState, GameState, piece_Black_King_Bishop, F6);
+
+    Black_To_Move(GameState);
 #else
     /* NOTE: Test un-passant for white. */
-    MovePiece(AppState, GameState, piece_White_Pawn_E, E6);
-    MovePiece(AppState, GameState, piece_Black_Pawn_D, D5);
+    DebugMovePiece(AppState, GameState, piece_White_Pawn_E, E6);
+    DebugMovePiece(AppState, GameState, piece_Black_Pawn_D, D5);
 #endif
-}
-
-static int OLD_main(void)
-{
-    int Result = 0;
-
-    app_state AppState = {0};
-    game_state GameState;
-    game_tree GameTree = {0};
-
-    InitializeGameState(&GameState);
-    InitializeSquares(AppState.Squares, &GameState);
-
-    SetupForTesting(&AppState, &GameState);
-    GameTree.State = GameState;
-
-    AppState.GameTreeRoot = &GameTree;
-
-    GeneratePotentials(&AppState, &GameState);
-
-#if 0
-    { /* Debug print out potential states. */
-        game_tree *PreviousNode = 0;
-        game_tree *CurrentNode = AppState.GameTreeRoot;
-
-        game_state PotentialState = CurrentNode->State;
-        InitializeSquares(AppState.Squares, &PotentialState);
-        DebugPrintSquares(AppState.Squares);
-
-        do
-        {
-            while (CurrentNode->NextSibling)
-            {
-                PreviousNode = CurrentNode;
-                CurrentNode = CurrentNode->NextSibling;
-            }
-
-            game_state PotentialState = CurrentNode->State;
-            InitializeSquares(AppState.Squares, &PotentialState);
-            DebugPrintSquares(AppState.Squares);
-
-            PreviousNode->NextSibling = 0;
-            CurrentNode = AppState.GameTreeRoot;
-        } while (CurrentNode->NextSibling);
-    }
-#endif
-
-    return Result;
 }
 
 static int PositionInsideBoard(Vector2 Position)
@@ -1027,6 +951,7 @@ static Vector2 PositionToSquarePosition(Vector2 Position)
     Vector2 OffsetPosition;
     OffsetPosition.x = (Position.x - BOARD_PADDING) / SQUARE_SIZE_IN_PIXELS;
     OffsetPosition.y = BOARD_SIZE - ((Position.y - BOARD_PADDING) / SQUARE_SIZE_IN_PIXELS);
+
     if(PositionInsideBoard(OffsetPosition))
     {
         Result = (Vector2){OffsetPosition.x, OffsetPosition.y};
@@ -1035,6 +960,7 @@ static Vector2 PositionToSquarePosition(Vector2 Position)
     {
         Result = (Vector2){-1,-1};
     }
+
     return Result;
 }
 
@@ -1076,6 +1002,7 @@ static void HandleMove(app_state *AppState)
     ui *Ui = &AppState->Ui;
     int HasSelectedSquare = Ui->SelectedSquare.X >= 0 && Ui->SelectedSquare.Y >= 0;
     int HasMoveSquare = Ui->MoveSquare.X >= 0 && Ui->MoveSquare.Y >= 0;
+
     if (HasSelectedSquare && HasMoveSquare)
     {
         /* TODO: Call MakeMove... */
@@ -1098,12 +1025,15 @@ static void DrawBoard(app_state *AppState)
             int Y = (((BOARD_SIZE - 1) - Row) * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
             int IsDarkSquare = (X % 2) != (Y % 2);
             Color SquareColor = IsDarkSquare ? DARK_SQUARE_COLOR : LIGHT_SQUARE_COLOR;
+
             DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColor);
+
             if (Ui->HoverSquare.X == Col && Ui->HoverSquare.Y == Row)
             {
                 // draw outline of square if the mouse position is inside the square
                 DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, BLACK);
             }
+
             if (Ui->SelectedSquare.X == Col && Ui->SelectedSquare.Y == Row)
             {
                 DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SELECTED_SQUARE_COLOR);
@@ -1115,10 +1045,11 @@ static void DrawBoard(app_state *AppState)
     /* NOTE: Draw pieces. */
     for (s32 I = 0; I < piece_Count; ++I)
     {
-        /* double SquareFloatValue = BOARD[Row][Col] > 0.0f ? BOARD[Row][Col] : 0.0f; */
-        /* int SquareIntValue = (int)SquareFloatValue; */
         if (!(AppState && AppState->GameTreeRoot))
         {
+            /* NOTE: We only show AppState->GameTreeRoot for now, so break
+               the loop if GameTreeRoot does _not_ exist.
+            */
             break;
         }
 
@@ -1128,6 +1059,7 @@ static void DrawBoard(app_state *AppState)
         {
             int Row = Square / 8;
             int Col = Square % 8;
+            /* NOTE: @Copypasta */
             int X = (Col * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
             int Y = (((BOARD_SIZE - 1) - Row) * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
 
@@ -1135,6 +1067,7 @@ static void DrawBoard(app_state *AppState)
             Color Tint = {255,212,255,255};
             Vector2 Origin = {0,0};
             Rectangle Source, Dest;
+
             Source = (Rectangle){PieceTextureOffset.X, PieceTextureOffset.Y, PIECE_TEXTURE_SIZE, PIECE_TEXTURE_SIZE};
             Dest = (Rectangle){X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS};
             DrawTexturePro(Ui->ChessPieceTexture, Source, Dest, Origin, 0.0f, Tint);
@@ -1153,15 +1086,17 @@ int main(void)
 
     InitializeGameState(&GameState);
     InitializeSquares(AppState.Squares, &GameState);
+
     SetupForTesting(&AppState, &GameState);
+
     GameTree.State = GameState;
     AppState.GameTreeRoot = &GameTree;
-    AppState.Ui.ChessPieceTexture = LoadTexture("./assets/chess_pieces.png");
 
-    /* TODO: Init a game_state and test drawing the state on the board. */
+    AppState.Ui.ChessPieceTexture = LoadTexture("./assets/chess_pieces.png");
 
     if (!IsWindowReady())
     {
+        printf("Error: Window not ready\n");
         return 1;
     }
 
@@ -1169,11 +1104,12 @@ int main(void)
     {
         UpdateInput(&AppState);
         HandleMove(&AppState);
-        BeginDrawing();
 
+        BeginDrawing();
         DrawBoard(&AppState);
         EndDrawing();
     }
+
     CloseWindow();
 
     return 0;
