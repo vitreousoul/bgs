@@ -273,7 +273,7 @@ typedef struct
 
 typedef struct
 {
-    game_tree *GameTreeRoot;
+    game_tree GameTreeRoot;
     game_tree *GameTreeCurrent;
     game_tree *FreeGameTree;
     ui Ui;
@@ -492,7 +492,7 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
             AppState->GameTreeCurrent = GameTree;
         }
 
-        AppState->GameTreeRoot->NextSibling = GameTree;
+        AppState->GameTreeRoot.NextSibling = GameTree;
     }
     else
     {
@@ -1045,15 +1045,7 @@ static void DrawBoard(app_state *AppState)
     /* NOTE: Draw pieces. */
     for (s32 I = 0; I < piece_Count; ++I)
     {
-        if (!(AppState && AppState->GameTreeRoot))
-        {
-            /* NOTE: We only show AppState->GameTreeRoot for now, so break
-               the loop if GameTreeRoot does _not_ exist.
-            */
-            break;
-        }
-
-        square Square = AppState->GameTreeRoot->State.Piece[I];
+        square Square = AppState->GameTreeRoot.State.Piece[I];
 
         if (Is_Valid_Square(Square) && IsTextureReady(Ui->ChessPieceTexture))
         {
@@ -1081,16 +1073,11 @@ int main(void)
     SetTargetFPS(TARGET_FPS);
 
     app_state AppState = {0};
-    game_state GameState;
-    game_tree GameTree = {0};
 
-    InitializeGameState(&GameState);
-    InitializeSquares(AppState.Squares, &GameState);
+    InitializeGameState(&AppState.GameTreeRoot.State);
+    InitializeSquares(AppState.Squares, &AppState.GameTreeRoot.State);
 
-    SetupForTesting(&AppState, &GameState);
-
-    GameTree.State = GameState;
-    AppState.GameTreeRoot = &GameTree;
+    SetupForTesting(&AppState, &AppState.GameTreeRoot.State);
 
     AppState.Ui.ChessPieceTexture = LoadTexture("./assets/chess_pieces.png");
 
@@ -1104,6 +1091,11 @@ int main(void)
     {
         UpdateInput(&AppState);
         HandleMove(&AppState);
+
+        if (IsKeyPressed(KEY_RIGHT))
+        {
+            printf("TODO: Go to next potential board.\n");
+        }
 
         BeginDrawing();
         DrawBoard(&AppState);
