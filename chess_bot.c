@@ -514,7 +514,7 @@ internal void Look(app_state *AppState, game_state *GameState, piece Piece, u8 R
     {
         b32 PositionInBounds = (CurrentRow >= 0 && CurrentRow < 8 &&
                                 CurrentCol >= 0 && CurrentCol < 8);
-        b32 CanReach = TotalLength < MaxLength;
+        b32 CanReach = TotalLength <= MaxLength;
 
         if (!(PositionInBounds && CanReach))
         {
@@ -1079,6 +1079,8 @@ int main(void)
 
     SetupForTesting(&AppState, &AppState.GameTreeRoot.State);
 
+    GeneratePotentials(&AppState, &AppState.GameTreeRoot.State);
+
     AppState.Ui.ChessPieceTexture = LoadTexture("./assets/chess_pieces.png");
 
     if (!IsWindowReady())
@@ -1094,7 +1096,10 @@ int main(void)
 
         if (IsKeyPressed(KEY_RIGHT))
         {
-            printf("TODO: Go to next potential board.\n");
+            if (AppState.GameTreeRoot.NextSibling)
+            {
+                AppState.GameTreeRoot = *AppState.GameTreeRoot.NextSibling;
+            }
         }
 
         BeginDrawing();
