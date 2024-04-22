@@ -323,6 +323,14 @@ internal void RemovePiece(app_state *AppState, game_state *GameState, piece Piec
 
 internal void MovePieceToSquare(app_state *AppState, game_state *GameState, piece Piece, square Square)
 {
+    piece MaybeCapturedPiece = AppState->Squares[Square];
+
+    /* NOTE: Capture. */
+    if (Is_Valid_Piece(MaybeCapturedPiece))
+    {
+        GameState->Piece[MaybeCapturedPiece] = square_Null;
+    }
+
     AppState->Squares[GameState->Piece[Piece]] = piece_Null;
     GameState->Piece[Piece] = Square;
     AppState->Squares[Square] = Piece;
@@ -528,7 +536,6 @@ internal void Look(app_state *AppState, game_state *GameState, piece Piece, u8 R
         {
             if (Get_Piece_Color(TargetPiece) != PieceColor)
             {
-                /* NOTE: Add potential capture. */
                 AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
             }
 
@@ -536,7 +543,6 @@ internal void Look(app_state *AppState, game_state *GameState, piece Piece, u8 R
         }
         else
         {
-            /* NOTE: Add potential to an empty square. */
             AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
         }
 
@@ -699,13 +705,11 @@ internal void LookKnight(app_state *AppState, game_state *GameState, piece Piece
             {
                 if (Get_Piece_Color(TargetPiece) != PieceColor)
                 {
-                    /* NOTE: Add potential capture. */
                     AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
                 }
             }
             else
             {
-                /* NOTE: Add potential to an empty square. */
                 AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
             }
         }
