@@ -13,6 +13,8 @@
 #define s8   int8_t
 #define s32  int32_t
 
+#define f32  float
+
 #define global_variable  static
 #define internal         static
 
@@ -27,12 +29,41 @@ const s32 TARGET_FPS = 30;
 const s32 SQUARE_SIZE_IN_PIXELS = (SCREEN_HEIGHT - (2 * BOARD_PADDING)) / 8;
 #define BOARD_SIZE_IN_PIXELS (BOARD_SIZE * SQUARE_SIZE_IN_PIXELS)
 
-const Color BACKGROUND_COLOR = {57,56,58,255};
+typedef enum
+{
+    ui_color_theme_Light,
+    ui_color_theme_Dark,
+    ui_color_theme_Count,
+} ui_color_theme;
 
-const Color DARK_SQUARE_COLOR = {58,70,56,255};
-const Color LIGHT_SQUARE_COLOR = {148,138,120,255};
-const Color SELECTED_SQUARE_COLOR = {105,85,205,59};
-const Color SELECTED_SQUARE_OUTLINE_COLOR = {100,20,100,255};
+typedef enum
+{
+    ui_color_Background,
+    ui_color_Dark_Square,
+    ui_color_Light_Square,
+    ui_color_Selected_Square,
+    ui_color_Selected_Square_Outline,
+    ui_color_Count,
+} ui_color_type;
+
+global_variable Color UiColor[ui_color_theme_Count][ui_color_Count] = {
+    [ui_color_theme_Light] = {
+        [ui_color_Background] = (Color){190,190,210,255},
+        [ui_color_Dark_Square] = (Color){88,100,86,255},
+        [ui_color_Light_Square] = (Color){178,168,140,255},
+        [ui_color_Selected_Square] = (Color){255,255,255,255},
+        [ui_color_Selected_Square_Outline] = (Color){255,255,255,255},
+    },
+    [ui_color_theme_Dark] = {
+        [ui_color_Background] = (Color){57,56,58,255},
+        [ui_color_Dark_Square] = (Color){58,70,56,255},
+        [ui_color_Light_Square] = (Color){148,138,120,255},
+        [ui_color_Selected_Square] = (Color){105,85,205,59},
+        [ui_color_Selected_Square_Outline] = (Color){100,20,100,255},
+    }
+};
+
+#define DEFAULT_THEME ui_color_theme_Light
 
 #define PIECE_TEXTURE_SIZE 120
 
@@ -148,6 +179,15 @@ typedef enum
     piece_type_Count,
 } piece_type;
 
+global_variable f32 PieceValueTable[piece_type_Count] = {
+    [piece_type_Pawn]    = 1.0f,
+    [piece_type_Knight]  = 3.0f,
+    [piece_type_Bishop]  = 3.0f,
+    [piece_type_Rook]    = 5.0f,
+    [piece_type_Queen]   = 9.0f,
+    [piece_type_King]    = 0.0f
+};
+
 /* NOTE: Is_###_Piece assumes piece indexes are split by color,
    so all we have to do is check the most significant bit.
 */
@@ -250,14 +290,18 @@ typedef struct
     u8 Piece[piece_Count];
 } game_state;
 
+typedef struct game_tree game_tree;
+
 struct game_tree
 {
+    struct game_tree *PreviousSibling;
     struct game_tree *NextSibling;
+    struct game_tree *Parent;
     struct game_tree *FirstChild;
     game_state State;
+    f32 Score;
+    f32 ChildScoreAverage;
 };
-
-typedef struct game_tree game_tree;
 
 typedef struct
 {
@@ -267,6 +311,8 @@ typedef struct
     ivec2 SelectedSquare;
     ivec2 MoveSquare;
     Texture2D ChessPieceTexture;
+
+    ui_color_theme Theme;
 } ui;
 
 #define Game_Tree_Node_Pool_Size 2048
@@ -277,9 +323,9 @@ typedef struct
     game_tree *GameTreeCurrent;
     game_tree *FreeGameTree;
     ui Ui;
-    s32 GameTreeNodePoolIndex;
     u8 Squares[64];
     game_tree GameTreeNodePool[Game_Tree_Node_Pool_Size];
+    s32 GameTreeNodePoolIndex;
 } app_state;
 
 #if DEBUG
@@ -358,7 +404,6 @@ internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
     {
         MovePieceToSquare(AppState, GameState, Piece, Move.EndSquare);
     } break;
-    /* TODO: Compress castling code below. */
     case move_type_QueenCastle:
     {
         if (IsWhitePiece)
@@ -1028,7 +1073,8 @@ static void DrawBoard(app_state *AppState)
             int X = (Col * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
             int Y = (((BOARD_SIZE - 1) - Row) * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
             int IsDarkSquare = (X % 2) != (Y % 2);
-            Color SquareColor = IsDarkSquare ? DARK_SQUARE_COLOR : LIGHT_SQUARE_COLOR;
+            ui_color_type SquareColorType = IsDarkSquare ? ui_color_Dark_Square : ui_color_Light_Square;
+            Color SquareColor = UiColor[AppState->Ui.Theme][SquareColorType];
 
             DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColor);
 
@@ -1040,8 +1086,10 @@ static void DrawBoard(app_state *AppState)
 
             if (Ui->SelectedSquare.X == Col && Ui->SelectedSquare.Y == Row)
             {
-                DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SELECTED_SQUARE_COLOR);
-                DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SELECTED_SQUARE_OUTLINE_COLOR);
+                Color SquareColor = UiColor[AppState->Ui.Theme][ui_color_Selected_Square];
+                Color SquareColorOutline = UiColor[AppState->Ui.Theme][ui_color_Selected_Square_Outline];
+                DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColor);
+                DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColorOutline);
             }
         }
     }
@@ -1086,6 +1134,7 @@ int main(void)
     GeneratePotentials(&AppState, &AppState.GameTreeRoot.State);
 
     AppState.Ui.ChessPieceTexture = LoadTexture("./assets/chess_pieces.png");
+    AppState.Ui.Theme = DEFAULT_THEME;
 
     if (!IsWindowReady())
     {
@@ -1107,11 +1156,15 @@ int main(void)
         }
 
         BeginDrawing();
+        ClearBackground(UiColor[AppState.Ui.Theme][ui_color_Background]);
         DrawBoard(&AppState);
         EndDrawing();
     }
 
     CloseWindow();
+
+    printf("sizeof(app_state) %lu\n", sizeof(app_state));
+    printf("sizeof(game_tree) %lu\n", sizeof(game_tree));
 
     return 0;
 }
