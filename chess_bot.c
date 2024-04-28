@@ -1,4 +1,6 @@
 /*
+    TODO: Crawl the game-tree and call GeneratePotentials for each leaf until we run out of game-tree-nodes.
+
     TODO: Convert this into an ".h" file and use it in "gui_app.c" or wherever.
     TODO: Namespace all names so that chess_bot can become a library.
 */
@@ -317,15 +319,25 @@ typedef struct
 
 #define Game_Tree_Node_Pool_Size 2048
 
+typedef enum
+{
+    app_state_flags_GameTreeNodePoolIsFull,
+    app_state_flags_Count,
+} app_state_flags;
+
 typedef struct
 {
     game_tree GameTreeRoot;
     game_tree *GameTreeCurrent;
     game_tree *FreeGameTree;
+
     ui Ui;
+
     u8 Squares[64];
     game_tree GameTreeNodePool[Game_Tree_Node_Pool_Size];
     s32 GameTreeNodePoolIndex;
+
+    u32 Flags;
 } app_state;
 
 #if DEBUG
@@ -355,7 +367,7 @@ internal game_tree *PushGameTree(app_state *AppState)
     }
     else
     {
-        printf("Error: Pushing game_tree.\n");
+        Flag_Set(AppState->Flags, app_state_flags_GameTreeNodePoolIsFull);
     }
 
     return GameTree;
@@ -531,10 +543,11 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
     InitializeSquares(AppState->Squares, GameState);
 
     game_tree *GameTree = PushGameTree(AppState);
-    GameTree->State = NewGameState;
 
     if (GameTree)
     {
+        GameTree->State = NewGameState;
+
         if (!AppState->GameTreeCurrent)
         {
             AppState->GameTreeCurrent = GameTree;
@@ -546,10 +559,6 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
         }
 
         AppState->GameTreeRoot.NextSibling = GameTree;
-    }
-    else
-    {
-        Assert(!"TODO: Handle the case that we ran out of free game_trees\n");
     }
 }
 
@@ -850,6 +859,20 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
 
     for (s32 I = Start; I < End; ++I)
     {
+        if (Flag_Get(AppState->Flags, app_state_flags_GameTreeNodePoolIsFull))
+        {
+            /* NOTE: We check here if we have run out of nodes, becuase it is easier,
+               but this means we sometimes try to call AddPotential mutliple times
+               before reaching this point and breaking out.
+
+               Maybe it's better to check after look calls below, but that would add
+               a bunch of if's so maybes it's just cleaner to check after calling
+               multiple Look*() functions.
+            */
+            printf("we ran out of nodes, breaking.....\n");
+            break;
+        }
+
         piece Piece = I;
         u8 Square = GameState->Piece[I];
         u8 Row = Square / 8;
@@ -1121,6 +1144,8 @@ static void DrawBoard(app_state *AppState)
 
 int main(void)
 {
+    Assert(app_state_flags_Count < 32); /* NOTE: Assume the app-state flags value is 32-bit. */
+
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "CHESS BOT");
     SetTargetFPS(TARGET_FPS);
 
@@ -1131,7 +1156,20 @@ int main(void)
 
     SetupForTesting(&AppState, &AppState.GameTreeRoot.State);
 
-    GeneratePotentials(&AppState, &AppState.GameTreeRoot.State);
+    for (;;)
+    {
+        s32 PreviousNodeIndex = AppState.GameTreeNodePoolIndex;
+
+        /* TODO: Crawl the game_tree here and call GeneratePotentials for each leaf game-state. */
+        GeneratePotentials(&AppState, &AppState.GameTreeRoot.State);
+
+        b32 RunOutOfNodes = AppState.GameTreeNodePoolIndex >= Game_Tree_Node_Pool_Size;
+        b32 NoNodesAdded = AppState.GameTreeNodePoolIndex == PreviousNodeIndex;
+        if (RunOutOfNodes || NoNodesAdded)
+        {
+            break;
+        }
+    }
 
     AppState.Ui.ChessPieceTexture = LoadTexture("./assets/chess_pieces.png");
     AppState.Ui.Theme = DEFAULT_THEME;
