@@ -45,6 +45,8 @@ typedef enum
     ui_color_Light_Square,
     ui_color_Selected_Square,
     ui_color_Selected_Square_Outline,
+    ui_color_Active,
+    ui_color_Inactive,
     ui_color_Count,
 } ui_color_type;
 
@@ -55,6 +57,8 @@ global_variable Color UiColor[ui_color_theme_Count][ui_color_Count] = {
         [ui_color_Light_Square] = (Color){178,168,140,255},
         [ui_color_Selected_Square] = (Color){255,255,255,255},
         [ui_color_Selected_Square_Outline] = (Color){255,255,255,255},
+        [ui_color_Active] = (Color){50,58,50,255},
+        [ui_color_Inactive] = (Color){150,158,150,155},
     },
     [ui_color_theme_Dark] = {
         [ui_color_Background] = (Color){57,56,58,255},
@@ -62,6 +66,8 @@ global_variable Color UiColor[ui_color_theme_Count][ui_color_Count] = {
         [ui_color_Light_Square] = (Color){148,138,120,255},
         [ui_color_Selected_Square] = (Color){105,85,205,59},
         [ui_color_Selected_Square_Outline] = (Color){100,20,100,255},
+        [ui_color_Active] = (Color){250,255,250,255},
+        [ui_color_Inactive] = (Color){150,158,150,155},
     }
 };
 
@@ -514,6 +520,7 @@ internal void InitializeSquares(square *Squares, game_state *GameState)
 
 internal void AddPotential(app_state *AppState, game_state *GameState, piece Piece, square EndSquare, move_type MoveType)
 {
+    Assert(AppState->GameTreeCurrent != 0);
     {
         b32 IsCastleMove = MoveType == move_type_QueenCastle || MoveType == move_type_KingCastle;
         Assert(Is_Valid_Piece(Piece));
@@ -547,18 +554,15 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
     if (GameTree)
     {
         GameTree->State = NewGameState;
+        GameTree->NextSibling = AppState->GameTreeCurrent->FirstChild;
 
-        if (!AppState->GameTreeCurrent)
+        if (GameTree->NextSibling)
         {
-            AppState->GameTreeCurrent = GameTree;
-        }
-        else
-        {
-            GameTree->NextSibling = AppState->GameTreeCurrent;
-            AppState->GameTreeCurrent = GameTree;
+            GameTree->NextSibling->PreviousSibling = GameTree;
         }
 
-        AppState->GameTreeRoot.NextSibling = GameTree;
+        AppState->GameTreeCurrent->FirstChild = GameTree;
+        GameTree->Parent = AppState->GameTreeCurrent;
     }
 }
 
@@ -844,6 +848,7 @@ internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece
 
 internal void GeneratePotentials(app_state *AppState, game_state *GameState)
 {
+    Assert(AppState->GameTreeCurrent != 0);
     s32 Start;
 
     if (Is_White_Turn(GameState))
@@ -920,6 +925,15 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
             }
         }
     }
+}
+
+internal void GenerateAllPotentials(app_state *AppState)
+{
+    Assert(AppState->GameTreeCurrent != 0);
+    Assert(AppState->GameTreeCurrent->FirstChild == 0);
+
+    /* TODO: Iterate through the game tree and generate potentials at the leaves. */
+    GeneratePotentials(AppState, &AppState->GameTreeRoot.State);
 }
 
 internal void InitializeGameState(game_state *GameState)
@@ -1093,6 +1107,7 @@ static void DrawBoard(app_state *AppState)
     {
         for (s32 Col = 0; Col < BOARD_SIZE; ++Col)
         {
+            /* NOTE: @Copypasta */
             int X = (Col * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
             int Y = (((BOARD_SIZE - 1) - Row) * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
             int IsDarkSquare = (X % 2) != (Y % 2);
@@ -1120,7 +1135,7 @@ static void DrawBoard(app_state *AppState)
     /* NOTE: Draw pieces. */
     for (s32 I = 0; I < piece_Count; ++I)
     {
-        square Square = AppState->GameTreeRoot.State.Piece[I];
+        square Square = AppState->GameTreeCurrent->State.Piece[I];
 
         if (Is_Valid_Square(Square) && IsTextureReady(Ui->ChessPieceTexture))
         {
@@ -1140,6 +1155,24 @@ static void DrawBoard(app_state *AppState)
             DrawTexturePro(Ui->ChessPieceTexture, Source, Dest, Origin, 0.0f, Tint);
         }
     }
+
+    {
+        /* NOTE: Draw familial options for current game-tree. */
+        b32 HasNextSibling = AppState->GameTreeCurrent->NextSibling != 0;
+        b32 HasPreviousSibling = AppState->GameTreeCurrent->PreviousSibling != 0;
+        b32 HasFirstChild = AppState->GameTreeCurrent->FirstChild != 0;
+        b32 HasParent = AppState->GameTreeCurrent->Parent != 0;
+
+        Color HasNextSiblingColor = UiColor[AppState->Ui.Theme][HasNextSibling ? ui_color_Active : ui_color_Inactive];
+        Color HasPreviousSiblingColor = UiColor[AppState->Ui.Theme][HasPreviousSibling ? ui_color_Active : ui_color_Inactive];
+        Color HasFirstChildColor = UiColor[AppState->Ui.Theme][HasFirstChild ? ui_color_Active : ui_color_Inactive];
+        Color HasParentColor = UiColor[AppState->Ui.Theme][HasParent ? ui_color_Active : ui_color_Inactive];
+
+        DrawCircle(SCREEN_WIDTH - 40, 60, 13.0f, HasNextSiblingColor);
+        DrawCircle(SCREEN_WIDTH - 80, 60, 13.0f, HasPreviousSiblingColor);
+        DrawCircle(SCREEN_WIDTH - 60, 80, 13.0f, HasFirstChildColor);
+        DrawCircle(SCREEN_WIDTH - 60, 40, 13.0f, HasParentColor);
+    }
 }
 
 int main(void)
@@ -1154,22 +1187,13 @@ int main(void)
     InitializeGameState(&AppState.GameTreeRoot.State);
     InitializeSquares(AppState.Squares, &AppState.GameTreeRoot.State);
 
+#if 0
     SetupForTesting(&AppState, &AppState.GameTreeRoot.State);
+#endif
 
-    for (;;)
-    {
-        s32 PreviousNodeIndex = AppState.GameTreeNodePoolIndex;
-
-        /* TODO: Crawl the game_tree here and call GeneratePotentials for each leaf game-state. */
-        GeneratePotentials(&AppState, &AppState.GameTreeRoot.State);
-
-        b32 RunOutOfNodes = AppState.GameTreeNodePoolIndex >= Game_Tree_Node_Pool_Size;
-        b32 NoNodesAdded = AppState.GameTreeNodePoolIndex == PreviousNodeIndex;
-        if (RunOutOfNodes || NoNodesAdded)
-        {
-            break;
-        }
-    }
+    AppState.GameTreeCurrent = &AppState.GameTreeRoot;
+    GenerateAllPotentials(&AppState);
+    AppState.GameTreeCurrent = &AppState.GameTreeRoot;
 
     AppState.Ui.ChessPieceTexture = LoadTexture("./assets/chess_pieces.png");
     AppState.Ui.Theme = DEFAULT_THEME;
@@ -1187,11 +1211,33 @@ int main(void)
 
         if (IsKeyPressed(KEY_RIGHT))
         {
-            if (AppState.GameTreeRoot.NextSibling)
+            if (AppState.GameTreeCurrent->NextSibling)
             {
-                AppState.GameTreeRoot = *AppState.GameTreeRoot.NextSibling;
+                AppState.GameTreeCurrent = AppState.GameTreeCurrent->NextSibling;
             }
         }
+        else if (IsKeyPressed(KEY_LEFT))
+        {
+            if (AppState.GameTreeCurrent->PreviousSibling)
+            {
+                AppState.GameTreeCurrent = AppState.GameTreeCurrent->PreviousSibling;
+            }
+        }
+        else if (IsKeyPressed(KEY_DOWN))
+        {
+            if (AppState.GameTreeCurrent->FirstChild)
+            {
+                AppState.GameTreeCurrent = AppState.GameTreeCurrent->FirstChild;
+            }
+        }
+        else if (IsKeyPressed(KEY_UP))
+        {
+            if (AppState.GameTreeCurrent->Parent)
+            {
+                AppState.GameTreeCurrent = AppState.GameTreeCurrent->Parent;
+            }
+        }
+
 
         BeginDrawing();
         ClearBackground(UiColor[AppState.Ui.Theme][ui_color_Background]);
