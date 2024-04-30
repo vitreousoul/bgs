@@ -1,6 +1,6 @@
 /*
-    TODO: Crawl the game-tree and call GeneratePotentials for each leaf until we run out of game-tree-nodes.
-
+    TODO: Create graph visualizer to debug game-tree.
+    
     TODO: Convert this into an ".h" file and use it in "gui_app.c" or wherever.
     TODO: Namespace all names so that chess_bot can become a library.
 */
@@ -55,8 +55,8 @@ global_variable Color UiColor[ui_color_theme_Count][ui_color_Count] = {
         [ui_color_Background] = (Color){190,190,210,255},
         [ui_color_Dark_Square] = (Color){88,100,86,255},
         [ui_color_Light_Square] = (Color){178,168,140,255},
-        [ui_color_Selected_Square] = (Color){255,255,255,255},
-        [ui_color_Selected_Square_Outline] = (Color){255,255,255,255},
+        [ui_color_Selected_Square] = (Color){105,85,205,59},
+        [ui_color_Selected_Square_Outline] = (Color){100,20,100,255},
         [ui_color_Active] = (Color){50,58,50,255},
         [ui_color_Inactive] = (Color){150,158,150,155},
     },
@@ -206,7 +206,19 @@ global_variable f32 PieceValueTable[piece_type_Count] = {
 #define Is_Valid_Piece(p) ((p) >= (piece_White_Queen_Rook) && (p) < piece_Count)
 #define Is_Valid_Square(s) ((s) >= 0 && (s) < 64)
 #define Is_Valid_Row_Col(row, col) ((row) >= 0 && (row) < 8 && (col) >= 0 && (col) < 8)
-#define Get_Square_Index(row, col) ((row) * 8 + (col))
+
+/* #define Get_Square_Index(row, col) ((row) * 8 + (col)) */
+internal s8 Get_Square_Index(s8 Row, s8 Col)
+{
+    if (Row < 0 || Row >= 8 || Col < 0 || Col >= 8)
+    {
+        return -1;
+    }
+    else
+    {
+        return Row * 8 + Col;
+    }
+}
 
 typedef enum
 {
@@ -323,7 +335,7 @@ typedef struct
     ui_color_theme Theme;
 } ui;
 
-#define Game_Tree_Node_Pool_Size 2048
+#define Game_Tree_Node_Pool_Size 1000
 
 typedef enum
 {
@@ -567,13 +579,13 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
 }
 
 /* TODO: Maybe bundle Piece, Row, Col, ... into a struct. */
-internal void Look(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 RowOffset, u8 ColOffset, u8 MaxLength)
+internal void Look(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col, s8 RowOffset, s8 ColOffset, u8 MaxLength)
 {
     Assert(RowOffset || ColOffset);
 
     u8 PieceColor = Get_Piece_Color(Piece);
-    u8 CurrentRow = Row + RowOffset;
-    u8 CurrentCol = Col + ColOffset;
+    s8 CurrentRow = Row + RowOffset;
+    s8 CurrentCol = Col + ColOffset;
     u8 TotalLength = 1;
 
     for (;;)
@@ -588,11 +600,10 @@ internal void Look(app_state *AppState, game_state *GameState, piece Piece, u8 R
         }
 
         s32 NewSquare = CurrentRow * 8 + CurrentCol;
-        s32 TargetPiece = AppState->Squares[NewSquare];
 
-        if (Is_Valid_Piece(TargetPiece))
+        if (Is_Valid_Square(NewSquare) && Is_Valid_Piece(AppState->Squares[NewSquare]))
         {
-            if (Get_Piece_Color(TargetPiece) != PieceColor)
+            if (Get_Piece_Color(AppState->Squares[NewSquare]) != PieceColor)
             {
                 AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
             }
@@ -610,47 +621,47 @@ internal void Look(app_state *AppState, game_state *GameState, piece Piece, u8 R
     }
 }
 
-internal void LookRight(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+internal void LookRight(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col, u8 MaxLength)
 {
     Look(AppState, GameState, Piece, Row, Col, 0, 1, MaxLength);
 }
 
-internal void LookUp(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+internal void LookUp(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col, u8 MaxLength)
 {
     Look(AppState, GameState, Piece, Row, Col, 1, 0, MaxLength);
 }
 
-internal void LookLeft(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+internal void LookLeft(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col, u8 MaxLength)
 {
     Look(AppState, GameState, Piece, Row, Col, 0, -1, MaxLength);
 }
 
-internal void LookDown(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+internal void LookDown(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col, u8 MaxLength)
 {
     Look(AppState, GameState, Piece, Row, Col, -1, 0, MaxLength);
 }
 
-internal void LookUpRight(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+internal void LookUpRight(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col, u8 MaxLength)
 {
     Look(AppState, GameState, Piece, Row, Col, 1, 1, MaxLength);
 }
 
-internal void LookUpLeft(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+internal void LookUpLeft(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col, u8 MaxLength)
 {
     Look(AppState, GameState, Piece, Row, Col, 1, -1, MaxLength);
 }
 
-internal void LookDownLeft(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+internal void LookDownLeft(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col, u8 MaxLength)
 {
     Look(AppState, GameState, Piece, Row, Col, -1, -1, MaxLength);
 }
 
-internal void LookDownRight(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+internal void LookDownRight(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col, u8 MaxLength)
 {
     Look(AppState, GameState, Piece, Row, Col, -1, 1, MaxLength);
 }
 
-internal void LookAllDirections(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col, u8 MaxLength)
+internal void LookAllDirections(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col, u8 MaxLength)
 {
     LookRight(     AppState, GameState, Piece, Row, Col, MaxLength);
     LookUpRight(   AppState, GameState, Piece, Row, Col, MaxLength);
@@ -662,12 +673,12 @@ internal void LookAllDirections(app_state *AppState, game_state *GameState, piec
     LookDownRight( AppState, GameState, Piece, Row, Col, MaxLength);
 }
 
-internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col)
+internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col)
 {
     u8 PieceColor = Get_Piece_Color(Piece);
     s8 Multiplier = 1;
-    u8 StartingRow = 1;
-    u8 EnPassantRow = 5;
+    s8 StartingRow = 1;
+    s8 EnPassantRow = 5;
 
     if (Is_Black_Piece(Piece))
     {
@@ -685,12 +696,11 @@ internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, 
         }
 
         s8 Offset = I * Multiplier;
-        u8 CurrentRow = Row + Offset;
+        s8 CurrentRow = Row + Offset;
 
         square Square = Get_Square_Index(CurrentRow, Col);
-        s32 TargetPiece = AppState->Squares[Square];
 
-        if (!Is_Valid_Piece(TargetPiece))
+        if (Is_Valid_Square(Square) && !Is_Valid_Piece(AppState->Squares[Square]))
         {
             AddPotential(AppState, GameState, Piece, Square, move_type_Move);
         }
@@ -704,13 +714,14 @@ internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, 
     for (s32 I = -1; I < 2; I += 2)
     {
         s8 Offset = Multiplier;
-        u8 CurrentRow = Row + Offset;
-        u8 CurrentCol = Col + I;
+        s8 CurrentRow = Row + Offset;
+        s8 CurrentCol = Col + I;
 
         square Square = Get_Square_Index(CurrentRow, CurrentCol);
-        s32 TargetPiece = AppState->Squares[Square];
 
-        if (Is_Valid_Piece(TargetPiece) && Get_Piece_Color(TargetPiece) != PieceColor)
+        if (Is_Valid_Square(Square) &&
+            Is_Valid_Piece(AppState->Squares[Square]) &&
+            Get_Piece_Color(AppState->Squares[Square]) != PieceColor)
         {
             AddPotential(AppState, GameState, Piece, Square, move_type_Move);
         }
@@ -721,7 +732,7 @@ internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, 
     {
         for (s32 I = -1; I < 2; I += 2)
         {
-            u8 CurrentCol = Col + I;
+            s8 CurrentCol = Col + I;
 
             piece MovePieceType = PieceType[GameState->LastMove.Piece];
 
@@ -744,7 +755,7 @@ internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, 
     }
 }
 
-internal void LookKnight(app_state *AppState, game_state *GameState, piece Piece, u8 Row, u8 Col)
+internal void LookKnight(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col)
 {
     s8 RowColOffsets[8][2] = {{1,2},{2,1},{2,-1},{1,-2},{-1,-2},{-2,-1},{-2,1},{-1,2}};
     u8 PieceColor = Get_Piece_Color(Piece);
@@ -757,11 +768,10 @@ internal void LookKnight(app_state *AppState, game_state *GameState, piece Piece
         if (Is_Valid_Row_Col(TargetRow, TargetCol))
         {
             s32 NewSquare = TargetRow * 8 + TargetCol;
-            s32 TargetPiece = AppState->Squares[NewSquare];
 
-            if (Is_Valid_Piece(TargetPiece))
+            if (Is_Valid_Square(NewSquare) && Is_Valid_Piece(AppState->Squares[NewSquare]))
             {
-                if (Get_Piece_Color(TargetPiece) != PieceColor)
+                if (Get_Piece_Color(AppState->Squares[NewSquare]) != PieceColor)
                 {
                     AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
                 }
@@ -776,7 +786,7 @@ internal void LookKnight(app_state *AppState, game_state *GameState, piece Piece
 
 internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece)
 {
-    u8 KingPosition;
+    s8 KingPosition;
 
     /* TODO: Compress the following code. */
     if (Is_White_Piece(Piece))
@@ -784,10 +794,9 @@ internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece
         KingPosition = E1;
         Assert(GameState->Piece[Piece] == KingPosition);
 
-        if (Flag_Get(GameState->Flags, White_Queen_Side_Castle_Flag))
+        if (Flag_Get(GameState->Flags, White_Queen_Side_Castle_Flag) &&
+            GameState->Piece[piece_White_Queen_Rook] == A1)
         {
-            Assert(GameState->Piece[piece_White_Queen_Rook] == A1);
-
             b32 B1Open = !Is_Valid_Piece(AppState->Squares[B1]);
             b32 C1Open = !Is_Valid_Piece(AppState->Squares[C1]);
             b32 D1Open = !Is_Valid_Piece(AppState->Squares[D1]);
@@ -799,10 +808,9 @@ internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece
         }
 
 
-        if (Flag_Get(GameState->Flags, White_King_Side_Castle_Flag))
+        if (Flag_Get(GameState->Flags, White_King_Side_Castle_Flag) &&
+            GameState->Piece[piece_White_King_Rook] == H1)
         {
-            Assert(GameState->Piece[piece_White_King_Rook] == H1);
-
             b32 F1Open = !Is_Valid_Piece(AppState->Squares[F1]);
             b32 G1Open = !Is_Valid_Piece(AppState->Squares[G1]);
 
@@ -816,10 +824,9 @@ internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece
     {
         KingPosition = E8;
         Assert(GameState->Piece[Piece] == KingPosition);
-        if (Flag_Get(GameState->Flags, Black_Queen_Side_Castle_Flag))
+        if (Flag_Get(GameState->Flags, Black_Queen_Side_Castle_Flag) &&
+            GameState->Piece[piece_Black_Queen_Rook] == A8)
         {
-            Assert(GameState->Piece[piece_Black_Queen_Rook] == A8);
-
             b32 B8Open = !Is_Valid_Piece(AppState->Squares[B8]);
             b32 C8Open = !Is_Valid_Piece(AppState->Squares[C8]);
             b32 D8Open = !Is_Valid_Piece(AppState->Squares[D8]);
@@ -831,10 +838,9 @@ internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece
         }
 
 
-        if (Flag_Get(GameState->Flags, Black_King_Side_Castle_Flag))
+        if (Flag_Get(GameState->Flags, Black_King_Side_Castle_Flag) &&
+            GameState->Piece[piece_Black_King_Rook] == H8)
         {
-            Assert(GameState->Piece[piece_Black_King_Rook] == H8);
-
             b32 F8Open = !Is_Valid_Piece(AppState->Squares[F8]);
             b32 G8Open = !Is_Valid_Piece(AppState->Squares[G8]);
 
@@ -846,6 +852,9 @@ internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece
     }
 }
 
+/* TODO: Remove the GameState argument and just get the
+   state from AppState->GameTreeCurrent.
+*/
 internal void GeneratePotentials(app_state *AppState, game_state *GameState)
 {
     Assert(AppState->GameTreeCurrent != 0);
@@ -879,9 +888,9 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
         }
 
         piece Piece = I;
-        u8 Square = GameState->Piece[I];
-        u8 Row = Square / 8;
-        u8 Col = Square % 8;
+        s8 Square = GameState->Piece[I];
+        s8 Row = Square / 8;
+        s8 Col = Square % 8;
 
         if (Is_Valid_Square(Square))
         {
@@ -932,8 +941,30 @@ internal void GenerateAllPotentials(app_state *AppState)
     Assert(AppState->GameTreeCurrent != 0);
     Assert(AppState->GameTreeCurrent->FirstChild == 0);
 
-    /* TODO: Iterate through the game tree and generate potentials at the leaves. */
-    GeneratePotentials(AppState, &AppState->GameTreeRoot.State);
+    game_tree *CurrentNode = AppState->GameTreeCurrent;
+
+    while (CurrentNode)
+    {
+        if (CurrentNode->FirstChild == 0)
+        {
+            AppState->GameTreeCurrent = CurrentNode;
+            InitializeSquares(AppState->Squares, &AppState->GameTreeCurrent->State);
+            GeneratePotentials(AppState, &AppState->GameTreeCurrent->State);
+        }
+        else if (CurrentNode->NextSibling != 0)
+        {
+            CurrentNode = CurrentNode->NextSibling;
+        }
+        else
+        {
+            CurrentNode = CurrentNode->FirstChild;
+        }
+
+        if (AppState->GameTreeNodePoolIndex >= Game_Tree_Node_Pool_Size)
+        {
+            break;
+        }
+    }
 }
 
 internal void InitializeGameState(game_state *GameState)
@@ -1102,6 +1133,20 @@ static void DrawBoard(app_state *AppState)
 {
     ui *Ui = &AppState->Ui;
 
+
+    { /* NOTE: Draw board backing. */
+        int BorderWidth = 6;
+        int X = BOARD_PADDING - BorderWidth;
+        int Y = BOARD_PADDING - BorderWidth;
+        int Width = (BOARD_SIZE * SQUARE_SIZE_IN_PIXELS) + (2 * BorderWidth);
+        int Height = (BOARD_SIZE * SQUARE_SIZE_IN_PIXELS) + (2 * BorderWidth);
+
+        ui_color_type ColorType = ui_color_Active;
+        Color SquareColor = UiColor[AppState->Ui.Theme][ColorType];
+
+        DrawRectangle(X, Y, Width, Height, SquareColor);
+    }
+
     /* NOTE: Draw squares. */
     for (s32 Row = 0; Row < BOARD_SIZE; ++Row)
     {
@@ -1237,7 +1282,6 @@ int main(void)
                 AppState.GameTreeCurrent = AppState.GameTreeCurrent->Parent;
             }
         }
-
 
         BeginDrawing();
         ClearBackground(UiColor[AppState.Ui.Theme][ui_color_Background]);
