@@ -282,7 +282,7 @@ global_variable u8 PieceTypeTable[piece_Count] = {
 #define Black_King_Side_Castle_Flag  (1 << 4)
 
 #define Flag_Get(  flags, flag) (((flags) &  (flag)) != 0)
-#define Flag_Set(  flags, flag)  ((flags) = (flags) & ~(flag) | flag)
+#define Flag_Set(  flags, flag)  ((flags) = (flags) | flag)
 #define Flag_Unset(flags, flag)  ((flags) = (flags) & ~(flag))
 #define Flag_Toggle(flags, flag)  (Flag_Get((flags), (flag)) ? Flag_Unset((flags), (flag)) : Flag_Set((flags), (flag)))
 
