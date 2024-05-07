@@ -1,7 +1,7 @@
 /*
-    TODO: Make chess-bot into an engine that processes incrementally.
     TODO: Create game_state valuing functions.
     TODO: Traverse game_tree and update each node's board-value. Each sibling adds to its parent's value, then the last sibling divides the parent-value by the sibling count. (Does this require a stack of sibling counts?)
+    TODO: Make chess-bot into an engine that processes incrementally.
 
     TODO: Convert this into an ".h" file and use it in "gui_app.c" or wherever.
     TODO: Namespace all names so that chess_bot can become a library.
@@ -13,6 +13,7 @@
 
 #define u8   uint8_t
 #define u32  uint32_t
+#define u64  uint64_t
 #define b32  uint32_t
 #define s8   int8_t
 #define s32  int32_t
@@ -49,6 +50,7 @@ typedef enum
     ui_color_Selected_Square_Outline,
     ui_color_Active,
     ui_color_Inactive,
+    ui_color_TextPrimary,
     ui_color_Count,
 } ui_color_type;
 
@@ -61,6 +63,7 @@ global_variable Color UiColor[ui_color_theme_Count][ui_color_Count] = {
         [ui_color_Selected_Square_Outline] = (Color){100,20,100,255},
         [ui_color_Active] = (Color){50,58,50,255},
         [ui_color_Inactive] = (Color){150,158,150,155},
+        [ui_color_TextPrimary] = (Color){20,20,20,255},
     },
     [ui_color_theme_Dark] = {
         [ui_color_Background] = (Color){57,56,58,255},
@@ -70,6 +73,7 @@ global_variable Color UiColor[ui_color_theme_Count][ui_color_Count] = {
         [ui_color_Selected_Square_Outline] = (Color){100,20,100,255},
         [ui_color_Active] = (Color){250,255,250,255},
         [ui_color_Inactive] = (Color){150,158,150,155},
+        [ui_color_TextPrimary] = (Color){220,220,220,255},
     }
 };
 
@@ -235,7 +239,7 @@ typedef enum
     square_Null,
 } square_name;
 
-global_variable u8 PieceType[piece_Count] = {
+global_variable u8 PieceTypeTable[piece_Count] = {
     [piece_White_Queen_Rook]    = piece_type_Rook,
     [piece_White_Queen_Knight]  = piece_type_Knight,
     [piece_White_Queen_Bishop]  = piece_type_Bishop,
@@ -572,6 +576,40 @@ internal void InitializeSquares(square *Squares, game_state *GameState)
     }
 }
 
+internal f32 GetGameStateScore(app_state *AppState, game_state *GameState)
+{
+    f32 Score = 0.0f;
+
+    f32 WhiteScore = 0.0f;
+    f32 BlackScore = 0.0f;
+
+    for (s32 I = 0; I < piece_Count; ++I)
+    {
+        square Square = GameState->Piece[I];
+        u8 PieceType = PieceTypeTable[I];
+
+        if (Is_Valid_Square(Square))
+        {
+            f32 PieceValue = PieceValueTable[PieceType];
+            f32 Bonus = AppState->Evaluation.SquareBonus[Square];
+            f32 PieceScore = PieceValue * Bonus;
+
+            if (I < 16)
+            {
+                WhiteScore += PieceScore;
+            }
+            else
+            {
+                BlackScore += PieceScore;
+            }
+        }
+    }
+
+    Score = WhiteScore - BlackScore;
+
+    return Score;
+}
+
 internal void AddPotential(app_state *AppState, game_state *GameState, piece Piece, square EndSquare, move_type MoveType)
 {
     Assert(AppState->GameTreeCurrent != 0);
@@ -617,6 +655,8 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
 
         AppState->GameTreeCurrent->FirstChild = GameTree;
         GameTree->Parent = AppState->GameTreeCurrent;
+
+        GameTree->Score = GetGameStateScore(AppState, &NewGameState);
     }
 }
 
@@ -776,7 +816,7 @@ internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, 
         {
             s8 CurrentCol = Col + I;
 
-            piece MovePieceType = PieceType[GameState->LastMove.Piece];
+            piece MovePieceType = PieceTypeTable[GameState->LastMove.Piece];
 
             s8 BeginRow = GameState->LastMove.BeginSquare / 8;
             s8 EndRow = GameState->LastMove.EndSquare / 8;
@@ -936,7 +976,7 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
 
         if (Is_Valid_Square(Square))
         {
-            switch (PieceType[I])
+            switch (PieceTypeTable[I])
             {
             case piece_type_Rook:
             {
@@ -1331,6 +1371,14 @@ static void DrawBoard(app_state *AppState)
             Dest = (Rectangle){X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS};
             DrawTexturePro(Ui->ChessPieceTexture, Source, Dest, Origin, 0.0f, Tint);
         }
+    }
+
+    { /* NOTE: Draw score. */
+        char Buff[128];
+        sprintf(Buff, "%.4f", AppState->GameTreeCurrent->Score);
+        Color Color = UiColor[AppState->Ui.Theme][ui_color_TextPrimary];
+
+        DrawText(Buff, 4.0f, 4.0f, 16.0f, Color);
     }
 
 #if 0
