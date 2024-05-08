@@ -349,7 +349,7 @@ typedef struct
     ui_color_theme Theme;
 } ui;
 
-#define Game_Tree_Node_Pool_Size 1000
+#define Game_Tree_Node_Pool_Size 64
 
 typedef enum
 {
@@ -1065,6 +1065,7 @@ internal void GenerateAllPotentials(app_state *AppState)
 
     /* NOTE: Generate potentials. */
     game_tree *CurrentNode = AppState->GameTreeCurrent;
+
     while (CurrentNode)
     {
         if (CurrentNode->FirstChild == 0)
@@ -1088,55 +1089,6 @@ internal void GenerateAllPotentials(app_state *AppState)
         }
     }
     printf("potential count %d\n", AppState->GameTreeNodePoolIndex + 1);
-
-    { /* NOTE: Update display nodes */
-        Vector2 Position = (Vector2){0.0f, 0.0f};
-        f32 NodeSizePlusPadding = AppState->Ui.GameTreeNodeSize + AppState->Ui.GameTreeNodePadding;
-        CurrentNode = &AppState->GameTreeRoot;
-        s32 DebugCount = 0;
-
-        while (CurrentNode)
-        {
-            DebugCount++;
-            s32 FirstChildIndex;
-            s32 NextSiblingIndex;
-            s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
-
-            game_tree *FirstChild = TraverseFirstChild(AppState, CurrentNode, &FirstChildIndex);
-            game_tree *NextSibling = TraverseNextSibling(AppState, CurrentNode, &NextSiblingIndex);
-
-            if (FirstChild)
-            {
-                CurrentNode = CurrentNode->FirstChild;
-                Position.y += NodeSizePlusPadding;
-                AppState->DisplayNodes[FirstChildIndex].Position = Position;
-                AppState->DisplayNodes[FirstChildIndex].Visible = 1;
-
-            }
-            else if (NextSibling)
-            {
-                CurrentNode = CurrentNode->NextSibling;
-                Position.x += NodeSizePlusPadding;
-                AppState->DisplayNodes[NextSiblingIndex].Position = Position;
-                AppState->DisplayNodes[NextSiblingIndex].Visible = 1;
-
-                AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
-            }
-            else if (CurrentNode->Parent)
-            {
-                CurrentNode = CurrentNode->Parent;
-                Position.x += NodeSizePlusPadding;
-                Position.y -= NodeSizePlusPadding;
-
-                AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
-            }
-            else
-            {
-                break;
-            }
-        }
-        printf("display node count %d\n", DebugCount);
-    }
 }
 
 internal void InitializeGameState(game_state *GameState)
@@ -1412,7 +1364,7 @@ internal void DrawGameTree(app_state *AppState)
 
     if (Index >= 0 && Index < Game_Tree_Node_Pool_Size)
     {
-        CurrentPosition = AppState->DisplayNodes[Index].Position;
+        /* CurrentPosition = AppState->DisplayNodes[Index].Position; */
     }
 
     { /* NOTE: Always draw the root for now... */
@@ -1483,6 +1435,148 @@ internal void InitializeEvaluation(app_state *AppState)
 #endif
 }
 
+internal void SwapGameTreeSiblings(game_tree *NodeA, game_tree *NodeB)
+{
+    Assert(NodeA->NextSibling == NodeB);
+    Assert(NodeB->PreviousSibling == NodeA);
+
+    game_tree *FirstNode = NodeA->PreviousSibling;
+    game_tree *LastNode = NodeB->NextSibling;
+
+    NodeB->NextSibling = NodeA;
+    NodeA->PreviousSibling = NodeB;
+
+    NodeB->PreviousSibling = FirstNode;
+    NodeA->NextSibling = LastNode;
+
+    if (FirstNode)
+    {
+        FirstNode->NextSibling = NodeB;
+    }
+
+    if (LastNode)
+    {
+        LastNode->PreviousSibling = NodeA;
+    }
+
+    if (NodeA->Parent && NodeA->Parent->FirstChild == NodeA)
+    {
+        NodeA->Parent->FirstChild = NodeB;
+    }
+}
+
+internal void ClearTraverals(app_state *AppState)
+{
+    for (u64 I = 0; I < ArrayCount(AppState->TraversalNodes); ++I)
+    {
+        AppState->TraversalNodes[I].Visited = 0;
+    }
+}
+
+internal void DoSomethingWithTheGameTree(app_state *AppState)
+{
+    if (!AppState->GameTreeRoot.FirstChild)
+    {
+        return;
+    }
+
+    ClearTraverals(AppState);
+
+    game_tree *CurrentNode = AppState->GameTreeRoot.FirstChild;
+    s32 SwapCount = 0;
+    s32 NodeCount = 0;
+
+    while (CurrentNode)
+    {
+        NodeCount += 1;
+        s32 FirstChildIndex = 0;
+        s32 NextSiblingIndex = 0;
+        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
+
+        game_tree *FirstChild = TraverseFirstChild(AppState, CurrentNode, &FirstChildIndex);
+        game_tree *NextSibling = TraverseNextSibling(AppState, CurrentNode, &NextSiblingIndex);
+        game_tree *SwapNode = CurrentNode;
+
+        b32 ShouldSwap = 0;
+
+        if (FirstChild)
+        {
+            CurrentNode = CurrentNode->FirstChild;
+        }
+        else if (NextSibling)
+        {
+            ShouldSwap = 1;
+            CurrentNode = CurrentNode->NextSibling;
+            AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
+        }
+        else
+        {
+            ShouldSwap = 1;
+            CurrentNode = CurrentNode->Parent;
+            AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
+        }
+
+        if (ShouldSwap && SwapNode && SwapNode->PreviousSibling)
+        {
+            f32 PreviousScore = SwapNode->PreviousSibling->Score;
+            f32 CurrentScore = SwapNode->Score;
+
+            if (CurrentScore > PreviousScore)
+            {
+                SwapCount += 1;
+                SwapGameTreeSiblings(SwapNode->PreviousSibling, SwapNode);
+            }
+        }
+    }
+}
+
+internal void UpdateDisplayNodes(app_state *AppState)
+{
+    Vector2 Position = (Vector2){0.0f, 0.0f};
+    f32 NodeSizePlusPadding = AppState->Ui.GameTreeNodeSize + AppState->Ui.GameTreeNodePadding;
+    game_tree *CurrentNode = &AppState->GameTreeRoot;
+
+    while (CurrentNode)
+    {
+        s32 FirstChildIndex;
+        s32 NextSiblingIndex;
+        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
+
+        game_tree *FirstChild = TraverseFirstChild(AppState, CurrentNode, &FirstChildIndex);
+        game_tree *NextSibling = TraverseNextSibling(AppState, CurrentNode, &NextSiblingIndex);
+
+        if (FirstChild)
+        {
+            CurrentNode = CurrentNode->FirstChild;
+            Position.y += NodeSizePlusPadding;
+            AppState->DisplayNodes[FirstChildIndex].Position = Position;
+            AppState->DisplayNodes[FirstChildIndex].Visible = 1;
+
+        }
+        else if (NextSibling)
+        {
+            CurrentNode = CurrentNode->NextSibling;
+            Position.x += NodeSizePlusPadding;
+            AppState->DisplayNodes[NextSiblingIndex].Position = Position;
+            AppState->DisplayNodes[NextSiblingIndex].Visible = 1;
+
+            AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
+        }
+        else if (CurrentNode->Parent)
+        {
+            CurrentNode = CurrentNode->Parent;
+            Position.x += NodeSizePlusPadding;
+            Position.y -= NodeSizePlusPadding;
+
+            AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
+        }
+        else
+        {
+            break;
+        }
+    }
+}
+
 int main(void)
 {
     Assert(app_state_flags_Count < 32); /* NOTE: Assume the app-state flags value is 32-bit. */
@@ -1507,6 +1601,8 @@ int main(void)
 
     AppState.GameTreeCurrent = &AppState.GameTreeRoot;
     GenerateAllPotentials(&AppState);
+    ClearTraverals(&AppState);
+    UpdateDisplayNodes(&AppState);
     AppState.GameTreeCurrent = &AppState.GameTreeRoot;
 
     AppState.DisplayNodeCameraPosition = (Vector2){SCREEN_HEIGHT + 30.0f, 30.0f};
@@ -1553,6 +1649,8 @@ int main(void)
 
         BeginDrawing();
         ClearBackground(UiColor[AppState.Ui.Theme][ui_color_Background]);
+        UpdateDisplayNodes(&AppState);
+        DoSomethingWithTheGameTree(&AppState);
         DrawBoard(&AppState);
         DrawGameTree(&AppState);
         EndDrawing();
