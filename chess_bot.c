@@ -62,7 +62,7 @@ global_variable Color UiColor[ui_color_theme_Count][ui_color_Count] = {
         [ui_color_Selected_Square] = (Color){105,85,205,59},
         [ui_color_Selected_Square_Outline] = (Color){100,20,100,255},
         [ui_color_Active] = (Color){50,58,50,255},
-        [ui_color_Inactive] = (Color){150,158,150,155},
+        [ui_color_Inactive] = (Color){120,128,120,220},
         [ui_color_TextPrimary] = (Color){20,20,20,255},
     },
     [ui_color_theme_Dark] = {
@@ -72,7 +72,7 @@ global_variable Color UiColor[ui_color_theme_Count][ui_color_Count] = {
         [ui_color_Selected_Square] = (Color){105,85,205,59},
         [ui_color_Selected_Square_Outline] = (Color){100,20,100,255},
         [ui_color_Active] = (Color){250,255,250,255},
-        [ui_color_Inactive] = (Color){150,158,150,155},
+        [ui_color_Inactive] = (Color){120,128,120,220},
         [ui_color_TextPrimary] = (Color){220,220,220,255},
     }
 };
@@ -1215,7 +1215,7 @@ static int IVec2Equal(ivec2 A, ivec2 B)
     return A.X == B.X && A.Y == B.Y;
 }
 
-static void UpdateInput(app_state *AppState)
+static void HandleUserInput(app_state *AppState)
 {
     ui *Ui = &AppState->Ui;
     Ui->MousePosition = GetMousePosition();
@@ -1234,6 +1234,35 @@ static void UpdateInput(app_state *AppState)
         else if (!IVec2Equal(Ui->SelectedSquare, Ui->HoverSquare))
         {
             Ui->MoveSquare = (ivec2){Ui->HoverSquare.X, Ui->HoverSquare.Y};
+        }
+    }
+
+    if (IsKeyPressed(KEY_DOWN))
+    {
+        if (AppState->GameTreeCurrent->NextSibling)
+        {
+            AppState->GameTreeCurrent = AppState->GameTreeCurrent->NextSibling;
+        }
+    }
+    else if (IsKeyPressed(KEY_UP))
+    {
+        if (AppState->GameTreeCurrent->PreviousSibling)
+        {
+            AppState->GameTreeCurrent = AppState->GameTreeCurrent->PreviousSibling;
+        }
+    }
+    else if (IsKeyPressed(KEY_RIGHT))
+    {
+        if (AppState->GameTreeCurrent->FirstChild)
+        {
+            AppState->GameTreeCurrent = AppState->GameTreeCurrent->FirstChild;
+        }
+    }
+    else if (IsKeyPressed(KEY_LEFT))
+    {
+        if (AppState->GameTreeCurrent->Parent)
+        {
+            AppState->GameTreeCurrent = AppState->GameTreeCurrent->Parent;
         }
     }
 }
@@ -1358,20 +1387,22 @@ static void DrawBoard(app_state *AppState)
 
 internal void DrawGameTree(app_state *AppState)
 {
-    Vector2 CurrentPosition = {0};
+    Vector2 Offset = { 2.0f * BOARD_PADDING + BOARD_SIZE_IN_PIXELS,
+                       0.0f };
+    Vector2 CameraPosition = AppState->DisplayNodeCameraPosition;
     s32 Index = GetGameTreeIndexFromPointer(AppState, AppState->GameTreeCurrent);
     f32 Size = AppState->Ui.GameTreeNodeSize;
 
-    if (Index >= 0 && Index < Game_Tree_Node_Pool_Size)
-    {
-        /* CurrentPosition = AppState->DisplayNodes[Index].Position; */
-    }
+    Color ActiveColor = UiColor[AppState->Ui.Theme][ui_color_Active];
+    Color InactiveColor = UiColor[AppState->Ui.Theme][ui_color_Inactive];
 
     { /* NOTE: Always draw the root for now... */
         /* @Copypasta */
-        Vector2 DeltaPosition = SubtractV2((Vector2){0.0f, 0.0f}, CurrentPosition);
-        Vector2 Position = AddV2(AppState->DisplayNodeCameraPosition, DeltaPosition);
-        DrawCircle(Position.x, Position.y, Size, (Color){20, 70, 20, 180});
+        Vector2 Position = AddV2(Offset, CameraPosition);
+        b32 IsValidGameTreeIndex = Index >= 0 && Index < Game_Tree_Node_Pool_Size;
+        Color NodeColor = IsValidGameTreeIndex ? InactiveColor : ActiveColor;
+
+        DrawCircle(Position.x, Position.y, Size, NodeColor);
     }
 
     for (s32 I = 0; I < Game_Tree_Node_Pool_Size; ++I)
@@ -1381,15 +1412,14 @@ internal void DrawGameTree(app_state *AppState)
         if (DisplayNode.Visible)
         {
             /* @Copypasta */
-            Vector2 DeltaPosition = SubtractV2(DisplayNode.Position, CurrentPosition);
-            Vector2 Position = AddV2(AppState->DisplayNodeCameraPosition, DeltaPosition);
+            Vector2 Position = AddV2(Offset, AddV2(CameraPosition, DisplayNode.Position));
             b32 PositionIsInBounds = (Position.x >= 0.0f && Position.x < SCREEN_WIDTH &&
                                       Position.y >= 0.0f && Position.y < SCREEN_HEIGHT);
 
             if (PositionIsInBounds)
             {
                 b32 IsCurrentNode = (AppState->GameTreeNodePool + I) == AppState->GameTreeCurrent;
-                Color NodeColor = IsCurrentNode ? (Color){20, 20, 190, 200} : (Color){20, 20, 20, 160};
+                Color NodeColor = IsCurrentNode ? ActiveColor : InactiveColor;
 
                 DrawCircle(Position.x, Position.y, Size, NodeColor);
             }
@@ -1483,12 +1513,9 @@ internal void DoSomethingWithTheGameTree(app_state *AppState)
     ClearTraverals(AppState);
 
     game_tree *CurrentNode = AppState->GameTreeRoot.FirstChild;
-    s32 SwapCount = 0;
-    s32 NodeCount = 0;
 
     while (CurrentNode)
     {
-        NodeCount += 1;
         s32 FirstChildIndex = 0;
         s32 NextSiblingIndex = 0;
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
@@ -1523,7 +1550,6 @@ internal void DoSomethingWithTheGameTree(app_state *AppState)
 
             if (CurrentScore > PreviousScore)
             {
-                SwapCount += 1;
                 SwapGameTreeSiblings(SwapNode->PreviousSibling, SwapNode);
             }
         }
@@ -1545,28 +1571,33 @@ internal void UpdateDisplayNodes(app_state *AppState)
         game_tree *FirstChild = TraverseFirstChild(AppState, CurrentNode, &FirstChildIndex);
         game_tree *NextSibling = TraverseNextSibling(AppState, CurrentNode, &NextSiblingIndex);
 
+        display_node *FirstChildDisplay = AppState->DisplayNodes + FirstChildIndex;
+        display_node *NextSiblingDisplay = AppState->DisplayNodes + NextSiblingIndex;
+
         if (FirstChild)
         {
             CurrentNode = CurrentNode->FirstChild;
-            Position.y += NodeSizePlusPadding;
-            AppState->DisplayNodes[FirstChildIndex].Position = Position;
-            AppState->DisplayNodes[FirstChildIndex].Visible = 1;
+            Position.x += NodeSizePlusPadding;
+
+            FirstChildDisplay->Position = Position;
+            FirstChildDisplay->Visible = 1;
 
         }
         else if (NextSibling)
         {
             CurrentNode = CurrentNode->NextSibling;
-            Position.x += NodeSizePlusPadding;
-            AppState->DisplayNodes[NextSiblingIndex].Position = Position;
-            AppState->DisplayNodes[NextSiblingIndex].Visible = 1;
+            Position.y += NodeSizePlusPadding;
+
+            NextSiblingDisplay->Position = Position;
+            NextSiblingDisplay->Visible = 1;
 
             AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
         }
         else if (CurrentNode->Parent)
         {
             CurrentNode = CurrentNode->Parent;
-            Position.x += NodeSizePlusPadding;
-            Position.y -= NodeSizePlusPadding;
+            Position.y += NodeSizePlusPadding;
+            Position.x -= NodeSizePlusPadding;
 
             AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
         }
@@ -1597,7 +1628,7 @@ int main(void)
     AppState.Ui.ChessPieceTexture = LoadTexture("./assets/chess_pieces.png");
     AppState.Ui.Theme = DEFAULT_THEME;
     AppState.Ui.GameTreeNodeSize = 8.0f;
-    AppState.Ui.GameTreeNodePadding = 5.0f;
+    AppState.Ui.GameTreeNodePadding = 6.0f;
 
     AppState.GameTreeCurrent = &AppState.GameTreeRoot;
     GenerateAllPotentials(&AppState);
@@ -1615,37 +1646,8 @@ int main(void)
 
     while (!WindowShouldClose())
     {
-        UpdateInput(&AppState);
+        HandleUserInput(&AppState);
         HandleMove(&AppState);
-
-        if (IsKeyPressed(KEY_RIGHT))
-        {
-            if (AppState.GameTreeCurrent->NextSibling)
-            {
-                AppState.GameTreeCurrent = AppState.GameTreeCurrent->NextSibling;
-            }
-        }
-        else if (IsKeyPressed(KEY_LEFT))
-        {
-            if (AppState.GameTreeCurrent->PreviousSibling)
-            {
-                AppState.GameTreeCurrent = AppState.GameTreeCurrent->PreviousSibling;
-            }
-        }
-        else if (IsKeyPressed(KEY_DOWN))
-        {
-            if (AppState.GameTreeCurrent->FirstChild)
-            {
-                AppState.GameTreeCurrent = AppState.GameTreeCurrent->FirstChild;
-            }
-        }
-        else if (IsKeyPressed(KEY_UP))
-        {
-            if (AppState.GameTreeCurrent->Parent)
-            {
-                AppState.GameTreeCurrent = AppState.GameTreeCurrent->Parent;
-            }
-        }
 
         BeginDrawing();
         ClearBackground(UiColor[AppState.Ui.Theme][ui_color_Background]);
