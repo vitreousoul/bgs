@@ -10,6 +10,18 @@
 #include <stdint.h>
 
 #include "./clibs/raylib.h"
+#include "./clibs/ryn_prof.h"
+
+typedef enum
+{
+    timed_block_DrawBoard,
+    timed_block_DrawGameTree,
+    timed_block_IncrementallySortGameTree,
+    timed_block_UpdateDisplayNodes,
+    timed_block_HandleInputAndMove,
+    timed_block_BeginAndClear,
+    timed_block_TestingSomethingHere,
+} timed_block_kind;
 
 #define u8   uint8_t
 #define u32  uint32_t
@@ -349,8 +361,7 @@ typedef struct
     ui_color_theme Theme;
 } ui;
 
-
-#define Game_Tree_Node_Pool_Size 64 /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
+#define Game_Tree_Node_Pool_Size 1024 /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
 
 typedef enum
 {
@@ -1223,6 +1234,8 @@ static int IVec2Equal(ivec2 A, ivec2 B)
     return A.X == B.X && A.Y == B.Y;
 }
 
+global_variable b32 GlobalShowDebugPanel = 0;
+
 static void HandleUserInput(app_state *AppState)
 {
     ui *Ui = &AppState->Ui;
@@ -1273,6 +1286,11 @@ static void HandleUserInput(app_state *AppState)
             AppState->GameTreeCurrent = AppState->GameTreeCurrent->Parent;
         }
     }
+
+    if (IsKeyPressed(KEY_TAB))
+    {
+        GlobalShowDebugPanel = !GlobalShowDebugPanel;
+    }
 }
 
 static void HandleMove(app_state *AppState)
@@ -1292,8 +1310,8 @@ static void HandleMove(app_state *AppState)
 
 static void DrawBoard(app_state *AppState)
 {
+    ryn_BEGIN_TIMED_BLOCK(timed_block_DrawBoard);
     ui *Ui = &AppState->Ui;
-
 
     { /* NOTE: Draw board backing. */
         int BorderWidth = 6;
@@ -1391,10 +1409,12 @@ static void DrawBoard(app_state *AppState)
         DrawCircle(SCREEN_WIDTH - 60, 40, 13.0f, HasParentColor);
     }
 #endif
+    ryn_END_TIMED_BLOCK(timed_block_DrawBoard);
 }
 
 internal void DrawGameTree(app_state *AppState)
 {
+    ryn_BEGIN_TIMED_BLOCK(timed_block_DrawGameTree);
     Vector2 CameraPosition = AppState->DisplayNodeCameraPosition;
     s32 Index = GetGameTreeIndexFromPointer(AppState, AppState->GameTreeCurrent);
     f32 Size = AppState->Ui.GameTreeNodeSize;
@@ -1418,6 +1438,7 @@ internal void DrawGameTree(app_state *AppState)
 
     for (s32 I = 0; I < Game_Tree_Node_Pool_Size; ++I)
     {
+        ryn_BEGIN_TIMED_BLOCK(timed_block_TestingSomethingHere);
         display_node DisplayNode = AppState->DisplayNodes[I];
 
         if (DisplayNode.Visible)
@@ -1435,7 +1456,9 @@ internal void DrawGameTree(app_state *AppState)
                 DrawCircle(Position.x, Position.y, Size, NodeColor);
             }
         }
+        ryn_END_TIMED_BLOCK(timed_block_TestingSomethingHere);
     }
+    ryn_END_TIMED_BLOCK(timed_block_DrawGameTree);
 }
 
 internal void InitializeEvaluation(app_state *AppState)
@@ -1514,8 +1537,9 @@ internal void ClearTraverals(app_state *AppState)
     }
 }
 
-internal void DoSomethingWithTheGameTree(app_state *AppState)
+internal void IncrementallySortGameTree(app_state *AppState)
 {
+    ryn_BEGIN_TIMED_BLOCK(timed_block_IncrementallySortGameTree);
     if (!AppState->GameTreeRoot.FirstChild)
     {
         return;
@@ -1565,10 +1589,12 @@ internal void DoSomethingWithTheGameTree(app_state *AppState)
             }
         }
     }
+    ryn_END_TIMED_BLOCK(timed_block_IncrementallySortGameTree);
 }
 
 internal void UpdateDisplayNodes(app_state *AppState)
 {
+    ryn_BEGIN_TIMED_BLOCK(timed_block_UpdateDisplayNodes);
     Vector2 Position = (Vector2){0.0f, 0.0f};
     f32 NodeSizePlusPadding = AppState->Ui.GameTreeNodeSize + AppState->Ui.GameTreeNodePadding;
     game_tree *CurrentNode = &AppState->GameTreeRoot;
@@ -1619,11 +1645,80 @@ internal void UpdateDisplayNodes(app_state *AppState)
             break;
         }
     }
+    ryn_END_TIMED_BLOCK(timed_block_UpdateDisplayNodes);
+}
+
+global_variable u64 GlobalEstimatedCpuFrequency = 0;
+
+internal void DebugDrawProfile(void)
+{
+    char Buff[1024];
+    Color TextColor = (Color){255, 255, 255, 255};
+    Vector2 TextPosition = (Vector2){ 10.0f, 10.0f };
+    f32 FontSize = 16.0;
+    f32 LineHeight = FontSize + 4.0f;
+
+    uint64_t TotalElapsedTime = ryn_GlobalProfiler.EndTime - ryn_GlobalProfiler.StartTime;
+
+    DrawRectangle(0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT, (Color){0, 0, 0, 100});
+
+    if(GlobalEstimatedCpuFrequency)
+    {
+        float TotalElapsedTimeInMs = 1000.0 * (double)TotalElapsedTime / (double)GlobalEstimatedCpuFrequency;
+        sprintf(Buff, "Total time: %0.4fms (CPU freq %llu)", TotalElapsedTimeInMs, GlobalEstimatedCpuFrequency);
+        DrawText(Buff, TextPosition.x, TextPosition.y, FontSize, TextColor);
+        TextPosition.y += LineHeight;
+    }
+
+    for(uint32_t TimerIndex = 0; TimerIndex < ArrayCount(ryn_GlobalProfiler.Timers); ++TimerIndex)
+    {
+        ryn_timer_data *Timer = ryn_GlobalProfiler.Timers + TimerIndex;
+        if(Timer->ElapsedInclusive)
+        {
+            double Megabyte = 1024.0f*1024.0f;
+            double Gigabyte = Megabyte*1024.0f;
+
+            double Percent = 100.0 * ((double)Timer->ElapsedExclusive / (double)TotalElapsedTime);
+            double PercentWithChildren = 100.0 * ((double)Timer->ElapsedInclusive / (double)TotalElapsedTime);
+
+            double Seconds = (double)Timer->ElapsedInclusive / (double)GlobalEstimatedCpuFrequency;
+            double BytesPerSecond = (double)Timer->ProcessedByteCount / Seconds;
+            double Megabytes = (double)Timer->ProcessedByteCount / (double)Megabyte;
+            double GigabytesPerSecond = BytesPerSecond / Gigabyte;
+
+            b32 HasChildren = Timer->ElapsedInclusive != Timer->ElapsedExclusive;
+            b32 HasByteCount = Timer->ProcessedByteCount;
+
+            char *FormatString = "";
+
+            if (!HasChildren && !HasByteCount)
+            {
+                sprintf(Buff, "    %s[%llu]: %llu (%.2f%%)", Timer->Label, Timer->HitCount, Timer->ElapsedExclusive, Percent);
+            }
+            else if (HasChildren && !HasByteCount)
+            {
+                sprintf(Buff, "    %s[%llu]: %llu (%.2f%%, %.2f%% w/children)", Timer->Label, Timer->HitCount, Timer->ElapsedExclusive, Percent, PercentWithChildren);
+            }
+            else if (!HasChildren && HasByteCount)
+            {
+                sprintf(Buff, "    %s[%llu]: %llu (%.2f%%)  %.3fmb at %.2fgb/s", Timer->Label, Timer->HitCount, Timer->ElapsedExclusive, Percent, Megabytes, GigabytesPerSecond);
+            }
+            else if (HasChildren && HasByteCount)
+            {
+                sprintf(Buff, "    %s[%llu]: %llu (%.2f%%, %.2f%% w/children)  %.3fmb at %.2fgb/s", Timer->Label, Timer->HitCount, Timer->ElapsedExclusive, Percent, PercentWithChildren, Megabytes, GigabytesPerSecond);
+            }
+
+            DrawText(Buff, TextPosition.x, TextPosition.y, FontSize, TextColor);
+            TextPosition.y += LineHeight;
+        }
+    }
 }
 
 int main(void)
 {
     Assert(app_state_flags_Count < 32); /* NOTE: Assume the app-state flags value is 32-bit. */
+
+    GlobalEstimatedCpuFrequency = ryn_EstimateCpuFrequency();
 
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "CHESS BOT");
     SetTargetFPS(TARGET_FPS);
@@ -1658,15 +1753,39 @@ int main(void)
 
     while (!WindowShouldClose())
     {
+        ryn_BeginProfile();
+
+        ryn_BEGIN_TIMED_BLOCK(timed_block_HandleInputAndMove);
         HandleUserInput(&AppState);
         HandleMove(&AppState);
+        ryn_END_TIMED_BLOCK(timed_block_HandleInputAndMove);
 
+        ryn_BEGIN_TIMED_BLOCK(timed_block_BeginAndClear);
         BeginDrawing();
         ClearBackground(UiColor[AppState.Ui.Theme][ui_color_Background]);
+        ryn_END_TIMED_BLOCK(timed_block_BeginAndClear);
+
         UpdateDisplayNodes(&AppState);
-        DoSomethingWithTheGameTree(&AppState);
+        IncrementallySortGameTree(&AppState);
         DrawBoard(&AppState);
         DrawGameTree(&AppState);
+
+        ryn_EndProfile();
+        if (GlobalShowDebugPanel)
+        {
+            DebugDrawProfile();
+        }
+        { /* NOTE: Clear profile timers. */
+            for(uint32_t TimerIndex = 0; TimerIndex < ArrayCount(ryn_GlobalProfiler.Timers); ++TimerIndex)
+            {
+                ryn_timer_data *Timer = ryn_GlobalProfiler.Timers + TimerIndex;
+                Timer->ElapsedExclusive = 0;
+                Timer->ElapsedInclusive = 0;
+                Timer->HitCount = 0;
+                Timer->ProcessedByteCount = 0;
+            }
+        }
+
         EndDrawing();
     }
 
