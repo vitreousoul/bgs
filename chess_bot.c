@@ -349,7 +349,8 @@ typedef struct
     ui_color_theme Theme;
 } ui;
 
-#define Game_Tree_Node_Pool_Size 64
+
+#define Game_Tree_Node_Pool_Size 64 /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
 
 typedef enum
 {
@@ -416,6 +417,13 @@ internal Vector2 AddV2(Vector2 A, Vector2 B)
 internal Vector2 SubtractV2(Vector2 A, Vector2 B)
 {
     Vector2 Result = (Vector2){ A.x - B.x, A.y - B.y };
+
+    return Result;
+}
+
+internal Vector2 MultiplySV2(f32 S, Vector2 V)
+{
+    Vector2 Result = (Vector2){ S * V.x, S * V.y };
 
     return Result;
 }
@@ -1387,11 +1395,14 @@ static void DrawBoard(app_state *AppState)
 
 internal void DrawGameTree(app_state *AppState)
 {
-    Vector2 Offset = { 2.0f * BOARD_PADDING + BOARD_SIZE_IN_PIXELS,
-                       0.0f };
     Vector2 CameraPosition = AppState->DisplayNodeCameraPosition;
     s32 Index = GetGameTreeIndexFromPointer(AppState, AppState->GameTreeCurrent);
     f32 Size = AppState->Ui.GameTreeNodeSize;
+
+    Vector2 DisplayNodeOffset = MultiplySV2(-1.0f, AppState->DisplayNodes[Index].Position);
+    Vector2 Offset = AddV2(DisplayNodeOffset,
+                           (Vector2){ 2.0f * BOARD_PADDING + BOARD_SIZE_IN_PIXELS,
+                             0.0f });
 
     Color ActiveColor = UiColor[AppState->Ui.Theme][ui_color_Active];
     Color InactiveColor = UiColor[AppState->Ui.Theme][ui_color_Inactive];
@@ -1562,6 +1573,8 @@ internal void UpdateDisplayNodes(app_state *AppState)
     f32 NodeSizePlusPadding = AppState->Ui.GameTreeNodeSize + AppState->Ui.GameTreeNodePadding;
     game_tree *CurrentNode = &AppState->GameTreeRoot;
 
+    ClearTraverals(AppState);
+
     while (CurrentNode)
     {
         s32 FirstChildIndex;
@@ -1633,7 +1646,6 @@ int main(void)
     AppState.GameTreeCurrent = &AppState.GameTreeRoot;
     GenerateAllPotentials(&AppState);
     ClearTraverals(&AppState);
-    UpdateDisplayNodes(&AppState);
     AppState.GameTreeCurrent = &AppState.GameTreeRoot;
 
     AppState.DisplayNodeCameraPosition = (Vector2){SCREEN_HEIGHT + 30.0f, 30.0f};
