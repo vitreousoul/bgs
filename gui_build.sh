@@ -22,6 +22,9 @@ fi
 
 FRAMEWORKS="-framework CoreVideo -framework IOKit -framework Cocoa -framework GLUT -framework OpenGL"
 SETTINGS="-std=c99 -Wall -Wextra -Wstrict-prototypes -Wold-style-definition -Wmissing-prototypes -Wmissing-declarations"
+SETTINGS="$SETTINGS -Wno-unused-function"
+SETTINGS="$SETTINGS -Wno-unused-parameter"
+SETTINGS="$SETTINGS -Wno-unused-variable"
 SOURCE_FILE="$TARGET_NAME.c"
 RAY_LIB="clibs/libraylib.a"
 
