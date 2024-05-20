@@ -1,10 +1,11 @@
 /*
-    TODO: Create game_state valuing functions.
-    TODO: Traverse game_tree and update each node's board-value. Each sibling adds to its parent's value, then the last sibling divides the parent-value by the sibling count. (Does this require a stack of sibling counts?)
-    TODO: Make chess-bot into an engine that processes incrementally.
+    Engine Functionality:
+        TODO: Create game_state valuing functions.
+        TODO: Evaluate the ChildScoreAverage value for a game_tree's list of children.
 
-    TODO: Convert this into an ".h" file and use it in "gui_app.c" or wherever.
-    TODO: Namespace all names so that chess_bot can become a library.
+    Turn into a library (maybe):
+        TODO: Convert this into an ".h" file and use it in "gui_app.c" or wherever.
+        TODO: Namespace all names so that chess_bot can become a library.
 */
 #include <stdio.h>
 #include <stdint.h>
@@ -50,6 +51,7 @@ typedef enum
 {
     ui_color_theme_Light,
     ui_color_theme_Dark,
+
     ui_color_theme_Count,
 } ui_color_theme;
 
@@ -63,6 +65,7 @@ typedef enum
     ui_color_Active,
     ui_color_Inactive,
     ui_color_TextPrimary,
+
     ui_color_Count,
 } ui_color_type;
 
@@ -92,9 +95,6 @@ global_variable Color UiColor[ui_color_theme_Count][ui_color_Count] = {
 #define DEFAULT_THEME ui_color_theme_Light
 
 #define PIECE_TEXTURE_SIZE 120
-
-char RANK_TABLE[8] = {'1','2','3','4','5','6','7','8'};
-char FILE_TABLE[8] = {'a','b','c','d','e','f','g','h'};
 
 typedef struct
 {
@@ -202,6 +202,7 @@ typedef enum
     piece_type_Queen,
     piece_type_King,
     piece_type_Pawn,
+
     piece_type_Count,
 } piece_type;
 
@@ -337,10 +338,11 @@ typedef struct game_tree game_tree;
 
 struct game_tree
 {
-    struct game_tree *PreviousSibling;
-    struct game_tree *NextSibling;
-    struct game_tree *Parent;
-    struct game_tree *FirstChild;
+    game_tree *PreviousSibling;
+    game_tree *NextSibling;
+    game_tree *Parent;
+    game_tree *FirstChild;
+
     game_state State;
     f32 Score;
     f32 ChildScoreAverage;
@@ -361,7 +363,7 @@ typedef struct
     ui_color_theme Theme;
 } ui;
 
-#define Game_Tree_Node_Pool_Size 1024 /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
+#define Game_Tree_Node_Pool_Size 4096 /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
 
 typedef enum
 {
@@ -575,6 +577,27 @@ internal void CopyGameState(game_state *Source, game_state *Destination)
     {
         Destination->Piece[I] = Source->Piece[I];
     }
+}
+
+internal b32 CheckIfGameStatesAreEqual(game_state *StateA, game_state *StateB)
+{
+    b32 FlagsAreEqual = StateA->Flags == StateB->Flags;
+    b32 PiecesMatch = 1;
+    /* TODO: Do we care if the LastMove is the same? Maybe for en-passant? */
+    /* move LastMove; */
+
+    for (s32 I = 0; I < piece_Count; ++I)
+    {
+        if (StateA->Piece[I] != StateB->Piece[I])
+        {
+            PiecesMatch = 0;
+            break;
+        }
+    }
+
+    b32 GameStatesAreEqual = FlagsAreEqual && PiecesMatch;
+
+    return GameStatesAreEqual;
 }
 
 internal void InitializeSquares(square *Squares, game_state *GameState)
@@ -1296,13 +1319,55 @@ static void HandleUserInput(app_state *AppState)
 static void HandleMove(app_state *AppState)
 {
     ui *Ui = &AppState->Ui;
-    int HasSelectedSquare = Ui->SelectedSquare.X >= 0 && Ui->SelectedSquare.Y >= 0;
+    ivec2 SelectedSquare = Ui->SelectedSquare;
+    ivec2 MoveSquare = Ui->MoveSquare;
+
+    int HasSelectedSquare = SelectedSquare.X >= 0 && SelectedSquare.Y >= 0;
     int HasMoveSquare = Ui->MoveSquare.X >= 0 && Ui->MoveSquare.Y >= 0;
 
-    if (HasSelectedSquare && HasMoveSquare)
+    if (AppState->GameTreeCurrent && HasSelectedSquare && HasMoveSquare)
     {
         /* TODO: Call MakeMove... */
-        /* MakeMove(); */
+        game_state TempGameState;
+
+        move Move;
+        Move.Type = move_type_Move; /* TODO: Handle castling, and en passant. */
+        Move.BeginSquare = Get_Square_Index(SelectedSquare.Y, SelectedSquare.X);
+        Move.EndSquare = Get_Square_Index(MoveSquare.Y, MoveSquare.X);
+
+        b32 MoveSquaresAreDifferent = Move.BeginSquare != Move.EndSquare;
+
+        if (Is_Valid_Square(Move.BeginSquare) && Is_Valid_Square(Move.EndSquare) && MoveSquaresAreDifferent)
+        {
+            Move.Piece = AppState->Squares[Move.BeginSquare];
+
+            CopyGameState(&AppState->GameTreeCurrent->State, &TempGameState);
+            InitializeSquares(AppState->Squares, &TempGameState);
+
+            /* @CopyPasta */
+            b32 IsWhiteTurn = Flag_Get(TempGameState.Flags, Whose_Turn_Flag) == 0;
+            b32 IsWhitePiece = Is_White_Piece(Move.Piece);
+            b32 IsMoveablePiece = (IsWhitePiece && IsWhiteTurn) || !(IsWhitePiece || IsWhiteTurn);
+
+            if (Is_Valid_Piece(Move.Piece) && IsMoveablePiece)
+            {
+                MakeMove(AppState, &TempGameState, Move);
+                game_tree *Sibling = AppState->GameTreeCurrent->FirstChild;
+
+                while (Sibling)
+                {
+                    b32 AreEqual = CheckIfGameStatesAreEqual(&TempGameState, &Sibling->State);
+
+                    if (AreEqual)
+                    {
+                        printf("valid move!\n");
+                    }
+
+                    Sibling = Sibling->NextSibling;
+                }
+            }
+        }
+
         Ui->SelectedSquare = (ivec2){-1,-1};
         Ui->MoveSquare = (ivec2){-1,-1};
     }
