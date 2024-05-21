@@ -1316,6 +1316,23 @@ static void HandleUserInput(app_state *AppState)
     }
 }
 
+static void MakeGameTreeTheRoot(app_state *AppState, game_tree *NewRoot)
+{
+    AppState->GameTreeRoot.FirstChild = NewRoot;
+    AppState->GameTreeCurrent = NewRoot;
+    NewRoot->Parent = &AppState->GameTreeRoot;
+    NewRoot->PreviousSibling = 0;
+    NewRoot->NextSibling = 0;
+
+    /* NOTE: Clear display node visibility. */
+    for (s32 I = 0; I < Game_Tree_Node_Pool_Size; ++I)
+    {
+        AppState->DisplayNodes[I].Visible = 0;
+    }
+
+    /* TODO: Add pruned game tree nodes to the free tree */
+}
+
 static void HandleMove(app_state *AppState)
 {
     ui *Ui = &AppState->Ui;
@@ -1360,7 +1377,7 @@ static void HandleMove(app_state *AppState)
 
                     if (AreEqual)
                     {
-                        printf("valid move!\n");
+                        MakeGameTreeTheRoot(AppState, Sibling);
                     }
 
                     Sibling = Sibling->NextSibling;
@@ -1501,6 +1518,27 @@ internal void DrawGameTree(app_state *AppState)
         DrawCircle(Position.x, Position.y, Size, NodeColor);
     }
 
+    game_tree *CurrentNode = AppState->GameTreeRoot.FirstChild;
+
+#if 0
+    while (CurrentNode)
+    {
+        s32 FirstChildIndex = 0;
+        s32 NextSiblingIndex = 0;
+        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
+
+        game_tree *FirstChild = TraverseFirstChild(AppState, CurrentNode, &FirstChildIndex);
+        game_tree *NextSibling = TraverseNextSibling(AppState, CurrentNode, &NextSiblingIndex);
+
+        if (FirstChild)
+        {
+            CurrentNode = CurrentNode->FirstChild;
+        }
+        else if (NextSibling)
+        {
+        }
+    }
+#else
     for (s32 I = 0; I < Game_Tree_Node_Pool_Size; ++I)
     {
         ryn_BEGIN_TIMED_BLOCK(timed_block_TestingSomethingHere);
@@ -1523,6 +1561,7 @@ internal void DrawGameTree(app_state *AppState)
         }
         ryn_END_TIMED_BLOCK(timed_block_TestingSomethingHere);
     }
+#endif
     ryn_END_TIMED_BLOCK(timed_block_DrawGameTree);
 }
 
@@ -1613,9 +1652,11 @@ internal void IncrementallySortGameTree(app_state *AppState)
     ClearTraverals(AppState);
 
     game_tree *CurrentNode = AppState->GameTreeRoot.FirstChild;
+    u32 DebugCount = 0;
 
     while (CurrentNode)
     {
+        DebugCount += 1;
         s32 FirstChildIndex = 0;
         s32 NextSiblingIndex = 0;
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
@@ -1655,6 +1696,11 @@ internal void IncrementallySortGameTree(app_state *AppState)
         }
     }
     ryn_END_TIMED_BLOCK(timed_block_IncrementallySortGameTree);
+    { /* TODO: delete this debug code */
+        char Buff[64];
+        sprintf(Buff, "Sort count %d", DebugCount);
+        DrawText(Buff, SCREEN_WIDTH - 190, 2, 18, (Color){0,0,0,255});
+    }
 }
 
 internal void UpdateDisplayNodes(app_state *AppState)
@@ -1665,9 +1711,11 @@ internal void UpdateDisplayNodes(app_state *AppState)
     game_tree *CurrentNode = &AppState->GameTreeRoot;
 
     ClearTraverals(AppState);
+    s32 DebugCount = 0;
 
     while (CurrentNode)
     {
+        DebugCount += 1;
         s32 FirstChildIndex;
         s32 NextSiblingIndex;
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
@@ -1711,6 +1759,12 @@ internal void UpdateDisplayNodes(app_state *AppState)
         }
     }
     ryn_END_TIMED_BLOCK(timed_block_UpdateDisplayNodes);
+
+    { /* TODO: delete this debug code */
+        char Buff[64];
+        sprintf(Buff, "Update count %d", DebugCount);
+        DrawText(Buff, SCREEN_WIDTH - 190, 24, 18, (Color){0,0,0,255});
+    }
 }
 
 global_variable u64 GlobalEstimatedCpuFrequency = 0;
