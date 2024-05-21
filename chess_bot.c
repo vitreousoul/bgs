@@ -678,7 +678,7 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
     /* NOTE: Calling MakeMove mutates our global Squares with the new
        board state. Since we are adding potentials, we want to call
        InitializeSquares after doing MakeMove, to reset Squares to the
-       current state. Basically, we recycle AppState and need to reset it
+       current state. Basically, we recycle AppState->Squares and need to reset it
        after each MakeMove call we do.
     */
     InitializeSquares(AppState->Squares, GameState);
@@ -1222,13 +1222,13 @@ internal void SetupForTesting(app_state *AppState, game_state *GameState)
 #endif
 }
 
-static int PositionInsideBoard(Vector2 Position)
+internal int PositionInsideBoard(Vector2 Position)
 {
     return (Position.x >= 0.0f && Position.x <= BOARD_SIZE &&
             Position.y >= 0.0f && Position.y <= BOARD_SIZE);
 }
 
-static Vector2 PositionToSquarePosition(Vector2 Position)
+internal Vector2 PositionToSquarePosition(Vector2 Position)
 {
     Vector2 Result;
     Vector2 OffsetPosition;
@@ -1247,19 +1247,19 @@ static Vector2 PositionToSquarePosition(Vector2 Position)
     return Result;
 }
 
-static int SquareValueOnBoard(int X, int Y)
+internal int SquareValueOnBoard(int X, int Y)
 {
     return X >= 0 && X < BOARD_SIZE && Y >= 0 && Y < BOARD_SIZE;
 }
 
-static int IVec2Equal(ivec2 A, ivec2 B)
+internal int IVec2Equal(ivec2 A, ivec2 B)
 {
     return A.X == B.X && A.Y == B.Y;
 }
 
 global_variable b32 GlobalShowDebugPanel = 0;
 
-static void HandleUserInput(app_state *AppState)
+internal void HandleUserInput(app_state *AppState)
 {
     ui *Ui = &AppState->Ui;
     Ui->MousePosition = GetMousePosition();
@@ -1316,24 +1316,66 @@ static void HandleUserInput(app_state *AppState)
     }
 }
 
-static void MakeGameTreeTheRoot(app_state *AppState, game_tree *NewRoot)
+internal void ClearTraverals(app_state *AppState)
 {
-    AppState->GameTreeRoot.FirstChild = NewRoot;
-    AppState->GameTreeCurrent = NewRoot;
-    NewRoot->Parent = &AppState->GameTreeRoot;
-    NewRoot->PreviousSibling = 0;
-    NewRoot->NextSibling = 0;
+    for (u64 I = 0; I < ArrayCount(AppState->TraversalNodes); ++I)
+    {
+        AppState->TraversalNodes[I].Visited = 0;
+    }
+}
 
-    /* NOTE: Clear display node visibility. */
+internal void ClearDisplayNodes(app_state *AppState)
+{
     for (s32 I = 0; I < Game_Tree_Node_Pool_Size; ++I)
     {
         AppState->DisplayNodes[I].Visible = 0;
     }
-
-    /* TODO: Add pruned game tree nodes to the free tree */
 }
 
-static void HandleMove(app_state *AppState)
+internal void AddGameTreeToFreeTree(app_state *AppState, game_tree *GameTree)
+{
+    Assert(GameTree != 0);
+    game_tree *CurrentNode = GameTree;
+
+    GameTree->Parent = 0;
+
+    while (CurrentNode->NextSibling)
+    {
+        CurrentNode = CurrentNode->NextSibling;
+    }
+
+    CurrentNode->NextSibling = AppState->FreeGameTree;
+    AppState->FreeGameTree = GameTree;
+}
+
+internal void MakeGameTreeTheRoot(app_state *AppState, game_tree *NewRoot)
+{
+    AddGameTreeToFreeTree(AppState, AppState->GameTreeRoot.FirstChild);
+
+    { /* NOTE: Splice NewRoot out of the sibling list. */
+        if (NewRoot->PreviousSibling)
+        {
+            NewRoot->PreviousSibling->NextSibling = NewRoot->NextSibling;
+        }
+
+        if (NewRoot->NextSibling)
+        {
+            NewRoot->NextSibling->PreviousSibling = NewRoot->PreviousSibling;
+        }
+
+        NewRoot->PreviousSibling = 0;
+        NewRoot->NextSibling = 0;
+    }
+
+    AppState->GameTreeRoot.FirstChild = NewRoot;
+    NewRoot->Parent = &AppState->GameTreeRoot;
+
+    AppState->GameTreeCurrent = NewRoot;
+
+    ClearDisplayNodes(AppState);
+}
+
+internal void HandleMove(app_state *AppState)
 {
     ui *Ui = &AppState->Ui;
     ivec2 SelectedSquare = Ui->SelectedSquare;
@@ -1390,7 +1432,7 @@ static void HandleMove(app_state *AppState)
     }
 }
 
-static void DrawBoard(app_state *AppState)
+internal void DrawBoard(app_state *AppState)
 {
     ryn_BEGIN_TIMED_BLOCK(timed_block_DrawBoard);
     ui *Ui = &AppState->Ui;
@@ -1633,14 +1675,6 @@ internal void SwapGameTreeSiblings(game_tree *NodeA, game_tree *NodeB)
     }
 }
 
-internal void ClearTraverals(app_state *AppState)
-{
-    for (u64 I = 0; I < ArrayCount(AppState->TraversalNodes); ++I)
-    {
-        AppState->TraversalNodes[I].Visited = 0;
-    }
-}
-
 internal void IncrementallySortGameTree(app_state *AppState)
 {
     ryn_BEGIN_TIMED_BLOCK(timed_block_IncrementallySortGameTree);
@@ -1833,6 +1867,53 @@ internal void DebugDrawProfile(void)
     }
 }
 
+internal void DebugDrawFreeTreeCount(app_state *AppState)
+{
+    game_tree *CurrentNode = AppState->FreeGameTree;
+    s32 Count = 0;
+
+    ClearTraverals(AppState);
+
+    while (CurrentNode)
+    {
+        Assert(CurrentNode != AppState->GameTreeRoot.FirstChild);
+        Assert(CurrentNode != &AppState->GameTreeRoot);
+        Count += 1;
+        s32 FirstChildIndex;
+        s32 NextSiblingIndex;
+
+        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
+
+        game_tree *FirstChild = TraverseFirstChild(AppState, CurrentNode, &FirstChildIndex);
+        game_tree *NextSibling = TraverseNextSibling(AppState, CurrentNode, &NextSiblingIndex);
+
+        if (FirstChild)
+        {
+            CurrentNode = CurrentNode->FirstChild;
+        }
+        else if (NextSibling)
+        {
+            CurrentNode = CurrentNode->NextSibling;
+            AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
+        }
+        else if (CurrentNode->Parent && CurrentNode->Parent != &AppState->GameTreeRoot)
+        {
+            CurrentNode = CurrentNode->Parent;
+            AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    {
+        char Buff[64];
+        sprintf(Buff, "Free Tree %d", Count);
+        DrawText(Buff, SCREEN_WIDTH - 190, 46, 18, (Color){0,0,0,255});
+    }
+}
+
 int main(void)
 {
     Assert(app_state_flags_Count < 32); /* NOTE: Assume the app-state flags value is 32-bit. */
@@ -1888,6 +1969,8 @@ int main(void)
         IncrementallySortGameTree(&AppState);
         DrawBoard(&AppState);
         DrawGameTree(&AppState);
+
+        DebugDrawFreeTreeCount(&AppState);
 
         ryn_EndProfile();
         if (GlobalShowDebugPanel)
