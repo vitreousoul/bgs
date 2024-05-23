@@ -1,4 +1,7 @@
 /*
+    BUGS:
+        TODO: Making the highest scoring move as the very first move crashes.
+
     Engine Functionality:
         TODO: Create game_state valuing functions.
         TODO: Evaluate the ChildScoreAverage value for a game_tree's list of children.
@@ -363,7 +366,7 @@ typedef struct
     ui_color_theme Theme;
 } ui;
 
-#define Game_Tree_Node_Pool_Size 20 /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
+#define Game_Tree_Node_Pool_Size 64 /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
 
 typedef enum
 {
@@ -381,6 +384,13 @@ typedef struct
 {
     b32 Visited;
 } traversal_node;
+
+typedef struct /* TODO: Return a traversal_result when you call Traverse* functions. */
+{
+    /* TODO: Shorten these names? */
+    game_tree *GameTree;
+    s32 GameTreeIndex;
+} traversal_result;
 
 typedef struct
 {
@@ -528,59 +538,56 @@ internal s32 GetGameTreeIndexFromPointer(app_state *AppState, game_tree *GameTre
     return Index;
 }
 
-internal game_tree *TraverseFirstChild(app_state *AppState, game_tree *GameTree, s32 *Index)
+internal traversal_result TraverseFirstChild(app_state *AppState, game_tree *GameTree)
 {
-    game_tree *FirstChild = 0;
-    *Index = GetGameTreeIndexFromPointer(AppState, GameTree->FirstChild);
+    traversal_result Result = {0};
+    Result.GameTreeIndex = GetGameTreeIndexFromPointer(AppState, GameTree->FirstChild);
 
-    if (*Index >= 0 && *Index < Game_Tree_Node_Pool_Size)
+    if (Result.GameTreeIndex >= 0 && Result.GameTreeIndex < Game_Tree_Node_Pool_Size)
     {
-        traversal_node *TraversalNode = AppState->TraversalNodes + *Index;
+        traversal_node *TraversalNode = AppState->TraversalNodes + Result.GameTreeIndex;
 
         if (!TraversalNode->Visited)
         {
-            FirstChild = AppState->GameTreeNodePool + *Index;
+            Result.GameTree = AppState->GameTreeNodePool + Result.GameTreeIndex;
         }
     }
 
-    return FirstChild;
+    return Result;
 }
 
-internal game_tree *TraverseNextSibling(app_state *AppState, game_tree *GameTree, s32 *Index)
+internal traversal_result TraverseNextSibling(app_state *AppState, game_tree *GameTree)
 {
-    game_tree *NextSibling = 0;
-    *Index = GetGameTreeIndexFromPointer(AppState, GameTree->NextSibling);
+    traversal_result Result = {0};
+    Result.GameTreeIndex = GetGameTreeIndexFromPointer(AppState, GameTree->NextSibling);
 
-    if (*Index >= 0 && *Index < Game_Tree_Node_Pool_Size)
+    if (Result.GameTreeIndex >= 0 && Result.GameTreeIndex < Game_Tree_Node_Pool_Size)
     {
-        NextSibling = AppState->GameTreeNodePool + *Index;
+        Result.GameTree = AppState->GameTreeNodePool + Result.GameTreeIndex;
     }
 
-    return NextSibling;
+    return Result;
 }
 
 internal void Debug_CheckThatTreeDoesNotContainNode(app_state *AppState, game_tree *RootNode, game_tree *TestNode)
 {
     ClearTraverals(AppState);
 
-    s32 FirstChildIndex;
-    s32 NextSiblingIndex;
     game_tree *CurrentNode = RootNode;
 
     while (CurrentNode)
     {
-        printf("%p\n", CurrentNode);
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
 
-        game_tree *FirstChild = TraverseFirstChild(AppState, CurrentNode, &FirstChildIndex);
-        game_tree *NextSibling = TraverseNextSibling(AppState, CurrentNode, &NextSiblingIndex);
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, CurrentNode);
+        traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, CurrentNode);
 
-        if (FirstChild)
+        if (FirstChildTraversal.GameTree)
         {
             CurrentNode = CurrentNode->FirstChild;
             AppState->TraversalNodes[CurrentNodeIndex].Visited = 1; /* TODO: The visited value should probably be set by TraverseFirstChild/NextSibling */
         }
-        else if (NextSibling)
+        else if (NextSiblingTraversal.GameTree)
         {
             CurrentNode = CurrentNode->NextSibling;
             AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
@@ -592,7 +599,6 @@ internal void Debug_CheckThatTreeDoesNotContainNode(app_state *AppState, game_tr
 
         Assert(CurrentNode != TestNode);
     }
-    printf("\n");
 }
 
 internal void SpliceGameTree(game_tree *GameTree)
@@ -621,41 +627,40 @@ internal void SpliceGameTree(game_tree *GameTree)
 
 internal void MakeGameTreeTheRoot(app_state *AppState, game_tree *NewRoot)
 {
-    game_tree *OldRoot = AppState->GameTreeRoot.FirstChild;
+    SpliceGameTree(NewRoot);
 
-    game_tree *Sibling = OldRoot;
-    for (;;)
+    game_tree *NewFreeTree = AppState->GameTreeRoot.FirstChild;
+
+    if (NewFreeTree->Parent)
     {
-        Sibling->Parent = 0;
+        Assert(NewFreeTree->Parent->FirstChild == NewFreeTree);
+        NewFreeTree->Parent->FirstChild = 0;
+    }
 
-        if (Sibling->NextSibling)
-        {
-            Sibling = Sibling->NextSibling;
-        }
-        else
-        {
-            break;
-        }
+    for (game_tree *NewFreeSibling = NewFreeTree;
+         NewFreeSibling;
+         NewFreeSibling = NewFreeSibling->NextSibling)
+    {
+        NewFreeSibling->Parent = 0;
     }
 
     if (AppState->FreeGameTree)
     {
         game_tree *LastFreeSibling = AppState->FreeGameTree;
-
         while (LastFreeSibling->NextSibling)
         {
             LastFreeSibling = LastFreeSibling->NextSibling;
         }
 
-        LastFreeSibling->NextSibling = OldRoot;
-        OldRoot->PreviousSibling = LastFreeSibling;
+        LastFreeSibling->NextSibling = NewFreeTree;
+        NewFreeTree->PreviousSibling = LastFreeSibling;
     }
     else
     {
-        AppState->FreeGameTree = OldRoot;
+        AppState->FreeGameTree = NewFreeTree;
     }
 
-    SpliceGameTree(NewRoot);
+    Debug_CheckThatTreeDoesNotContainNode(AppState, AppState->FreeGameTree, NewRoot);
 
     AppState->GameTreeRoot.FirstChild = NewRoot;
     NewRoot->Parent = &AppState->GameTreeRoot;
@@ -1284,7 +1289,6 @@ internal void GenerateAllPotentials(app_state *AppState)
             break;
         }
     }
-    printf("potential count %d\n", AppState->GameTreeNodePoolIndex + 1);
 }
 
 internal void InitializeGameState(game_state *GameState)
@@ -1778,17 +1782,17 @@ internal void IncrementallySortGameTree(app_state *AppState)
         s32 NextSiblingIndex = 0;
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
 
-        game_tree *FirstChild = TraverseFirstChild(AppState, CurrentNode, &FirstChildIndex);
-        game_tree *NextSibling = TraverseNextSibling(AppState, CurrentNode, &NextSiblingIndex);
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, CurrentNode);
+        traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, CurrentNode);
         game_tree *SwapNode = CurrentNode;
 
         b32 ShouldSwap = 0;
 
-        if (FirstChild)
+        if (FirstChildTraversal.GameTree)
         {
             CurrentNode = CurrentNode->FirstChild;
         }
-        else if (NextSibling)
+        else if (NextSiblingTraversal.GameTree)
         {
             ShouldSwap = 1;
             CurrentNode = CurrentNode->NextSibling;
@@ -1829,22 +1833,20 @@ internal void UpdateDisplayNodes(app_state *AppState)
 
     ClearTraverals(AppState);
     ClearDisplayNodes(AppState);
-    s32 DebugCount = 0;
+    s32 DebugCount = -1; /* NOTE: Start at -1 because we don't want to count AppState->GameTreeRoot. */
 
     while (CurrentNode)
     {
         DebugCount += 1;
-        s32 FirstChildIndex;
-        s32 NextSiblingIndex;
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
 
-        game_tree *FirstChild = TraverseFirstChild(AppState, CurrentNode, &FirstChildIndex);
-        game_tree *NextSibling = TraverseNextSibling(AppState, CurrentNode, &NextSiblingIndex);
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, CurrentNode);
+        traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, CurrentNode);
 
-        display_node *FirstChildDisplay = AppState->DisplayNodes + FirstChildIndex;
-        display_node *NextSiblingDisplay = AppState->DisplayNodes + NextSiblingIndex;
+        display_node *FirstChildDisplay = AppState->DisplayNodes + FirstChildTraversal.GameTreeIndex;
+        display_node *NextSiblingDisplay = AppState->DisplayNodes + NextSiblingTraversal.GameTreeIndex;
 
-        if (FirstChild)
+        if (FirstChildTraversal.GameTree)
         {
             CurrentNode = CurrentNode->FirstChild;
             Position.x += NodeSizePlusPadding;
@@ -1853,7 +1855,7 @@ internal void UpdateDisplayNodes(app_state *AppState)
             FirstChildDisplay->Visible = 1;
 
         }
-        else if (NextSibling)
+        else if (NextSiblingTraversal.GameTree)
         {
             CurrentNode = CurrentNode->NextSibling;
             Position.y += NodeSizePlusPadding;
@@ -1968,14 +1970,14 @@ internal void DebugDrawFreeTreeCount(app_state *AppState)
 
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
 
-        game_tree *FirstChild = TraverseFirstChild(AppState, CurrentNode, &FirstChildIndex);
-        game_tree *NextSibling = TraverseNextSibling(AppState, CurrentNode, &NextSiblingIndex);
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, CurrentNode);
+        traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, CurrentNode);
 
-        if (FirstChild)
+        if (FirstChildTraversal.GameTree)
         {
             CurrentNode = CurrentNode->FirstChild;
         }
-        else if (NextSibling)
+        else if (NextSiblingTraversal.GameTree)
         {
             CurrentNode = CurrentNode->NextSibling;
             AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;  /* TODO: The visited value should probably be set by TraverseFirstChild/NextSibling */
