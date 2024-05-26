@@ -1,10 +1,14 @@
 /*
     BUGS:
-        TODO: Making the highest scoring move as the very first move crashes.
+        TODO: Fix the game_tree leak that occurs when making moves.
+        TODO: En-passant is broken at the moment. Please fix.
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
         TODO: Evaluate the ChildScoreAverage value for a game_tree's list of children.
+
+    Dev Features:
+        TODO: Should we create an iterator for game_trees?
 
     Turn into a library (maybe):
         TODO: Convert this into an ".h" file and use it in "gui_app.c" or wherever.
@@ -366,7 +370,7 @@ typedef struct
     ui_color_theme Theme;
 } ui;
 
-#define Game_Tree_Node_Pool_Size 64 /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
+#define Game_Tree_Node_Pool_Size 4096 /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
 
 typedef enum
 {
@@ -481,48 +485,6 @@ internal void CopyGameState(game_state *Source, game_state *Destination)
     }
 }
 
-internal game_tree *CreateGameTree(app_state *AppState)
-{
-    game_tree *NewGameTree = AppState->FreeGameTree;
-
-    if (NewGameTree)
-    {
-        while (NewGameTree->FirstChild)
-        {
-            NewGameTree = NewGameTree->FirstChild;
-        }
-
-        if (NewGameTree->Parent)
-        {
-            NewGameTree->Parent->FirstChild = NewGameTree->NextSibling;
-        }
-
-        if (NewGameTree->NextSibling)
-        {
-            NewGameTree->NextSibling->PreviousSibling = 0;
-        }
-
-        AppState->FreeGameTree = NewGameTree->NextSibling;
-
-        NewGameTree->Parent = 0;
-        NewGameTree->FirstChild = 0;
-        NewGameTree->NextSibling = 0;
-        NewGameTree->PreviousSibling = 0;
-        ZeroGameState(&NewGameTree->State);
-    }
-    else if (AppState->GameTreeNodePoolIndex < Game_Tree_Node_Pool_Size)
-    {
-        NewGameTree = AppState->GameTreeNodePool + AppState->GameTreeNodePoolIndex;
-        ++AppState->GameTreeNodePoolIndex;
-    }
-    else
-    {
-        Flag_Set(AppState->Flags, app_state_flags_GameTreeNodePoolIsFull);
-    }
-
-    return NewGameTree;
-}
-
 internal void ClearTraverals(app_state *AppState)
 {
     for (u64 I = 0; I < ArrayCount(AppState->TraversalNodes); ++I)
@@ -569,6 +531,113 @@ internal traversal_result TraverseNextSibling(app_state *AppState, game_tree *Ga
     return Result;
 }
 
+
+#if DEBUG
+#define Debug_WalkGameTreeAndReturnCount(as, gt) Debug_WalkGameTreeAndReturnCount_((as), (gt))
+#else
+#define Debug_WalkGameTreeAndReturnCount(...) 0
+#endif
+internal s32 Debug_WalkGameTreeAndReturnCount_(app_state *AppState, game_tree *GameTree)
+{
+    s32 Count = 0;
+    game_tree *CurrentNode = GameTree;
+
+    ClearTraverals(AppState);
+
+    while (CurrentNode)
+    {
+        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
+
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, CurrentNode);
+        traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, CurrentNode);
+
+        if (FirstChildTraversal.GameTree)
+        {
+            CurrentNode = CurrentNode->FirstChild;
+        }
+        else if (NextSiblingTraversal.GameTree)
+        {
+            CurrentNode = CurrentNode->NextSibling;
+        }
+        else
+        {
+            CurrentNode = CurrentNode->Parent;
+        }
+
+        AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
+    }
+
+    for (s32 I = 0; I < Game_Tree_Node_Pool_Size; ++I)
+    {
+        if (AppState->TraversalNodes[I].Visited)
+        {
+            Count += 1;
+        }
+    }
+
+    return Count;
+}
+
+#if DEBUG
+#define Debug_CheckTheCountsOfTheTrees(as) Debug_CheckTheCountsOfTheTrees_((as))
+#else
+#define Debug_CheckTheCountsOfTheTrees(...) 0
+#endif
+internal s32 Debug_CheckTheCountsOfTheTrees_(app_state *AppState)
+{
+    s32 GameTreeCount = Debug_WalkGameTreeAndReturnCount(AppState, AppState->GameTreeRoot.FirstChild);
+    s32 FreeTreeCount = Debug_WalkGameTreeAndReturnCount(AppState, AppState->FreeGameTree);
+    s32 UnusedNodeCount = Game_Tree_Node_Pool_Size - AppState->GameTreeNodePoolIndex;
+
+    Assert(GameTreeCount + FreeTreeCount + UnusedNodeCount == Game_Tree_Node_Pool_Size);
+
+    return FreeTreeCount;
+}
+
+internal game_tree *CreateGameTree(app_state *AppState)
+{
+    game_tree *NewGameTree = AppState->FreeGameTree;
+
+    if (NewGameTree)
+    {
+        while (NewGameTree->FirstChild)
+        {
+            NewGameTree = NewGameTree->FirstChild;
+        }
+
+        if (NewGameTree->Parent && NewGameTree != AppState->FreeGameTree)
+        {
+            NewGameTree->Parent->FirstChild = NewGameTree->NextSibling;
+        }
+
+        if (NewGameTree->NextSibling)
+        {
+            NewGameTree->NextSibling->PreviousSibling = 0;
+        }
+
+        if (NewGameTree == AppState->FreeGameTree)
+        {
+            AppState->FreeGameTree = NewGameTree->NextSibling;
+        }
+
+        NewGameTree->Parent = 0;
+        NewGameTree->FirstChild = 0;
+        NewGameTree->NextSibling = 0;
+        NewGameTree->PreviousSibling = 0;
+        ZeroGameState(&NewGameTree->State);
+    }
+    else if (AppState->GameTreeNodePoolIndex < Game_Tree_Node_Pool_Size)
+    {
+        NewGameTree = AppState->GameTreeNodePool + AppState->GameTreeNodePoolIndex;
+        ++AppState->GameTreeNodePoolIndex;
+    }
+    else
+    {
+        Flag_Set(AppState->Flags, app_state_flags_GameTreeNodePoolIsFull);
+    }
+
+    return NewGameTree;
+}
 internal void Debug_CheckThatTreeDoesNotContainNode(app_state *AppState, game_tree *RootNode, game_tree *TestNode)
 {
     ClearTraverals(AppState);
@@ -660,13 +729,9 @@ internal void MakeGameTreeTheRoot(app_state *AppState, game_tree *NewRoot)
         AppState->FreeGameTree = NewFreeTree;
     }
 
-    Debug_CheckThatTreeDoesNotContainNode(AppState, AppState->FreeGameTree, NewRoot);
-
     AppState->GameTreeRoot.FirstChild = NewRoot;
     NewRoot->Parent = &AppState->GameTreeRoot;
     AppState->GameTreeCurrent = NewRoot;
-
-    Debug_CheckThatTreeDoesNotContainNode(AppState, AppState->FreeGameTree, NewRoot);
 }
 
 internal void RemovePiece(app_state *AppState, game_state *GameState, piece Piece)
@@ -1111,14 +1176,9 @@ internal void LookKnight(app_state *AppState, game_state *GameState, piece Piece
 
 internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece)
 {
-    s8 KingPosition;
-
     /* TODO: Compress the following code. */
-    if (Is_White_Piece(Piece))
+    if (Is_White_Piece(Piece) && GameState->Piece[Piece] == E1)
     {
-        KingPosition = E1;
-        Assert(GameState->Piece[Piece] == KingPosition);
-
         if (Flag_Get(GameState->Flags, White_Queen_Side_Castle_Flag) &&
             GameState->Piece[piece_White_Queen_Rook] == A1)
         {
@@ -1145,10 +1205,8 @@ internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece
             }
         }
     }
-    else
+    else if (Is_Black_Piece(Piece) && GameState->Piece[Piece] == E8)
     {
-        KingPosition = E8;
-        Assert(GameState->Piece[Piece] == KingPosition);
         if (Flag_Get(GameState->Flags, Black_Queen_Side_Castle_Flag) &&
             GameState->Piece[piece_Black_Queen_Rook] == A8)
         {
@@ -1161,7 +1219,6 @@ internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece
                 AddPotential(AppState, GameState, Piece, 255, move_type_QueenCastle);
             }
         }
-
 
         if (Flag_Get(GameState->Flags, Black_King_Side_Castle_Flag) &&
             GameState->Piece[piece_Black_King_Rook] == H8)
@@ -1289,6 +1346,8 @@ internal void GenerateAllPotentials(app_state *AppState)
             break;
         }
     }
+
+    AppState->GameTreeCurrent = AppState->GameTreeRoot.FirstChild;
 }
 
 internal void InitializeGameState(game_state *GameState)
@@ -1777,7 +1836,6 @@ internal void IncrementallySortGameTree(app_state *AppState)
 
     while (CurrentNode)
     {
-        DebugCount += 1;
         s32 FirstChildIndex = 0;
         s32 NextSiblingIndex = 0;
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
@@ -1791,12 +1849,14 @@ internal void IncrementallySortGameTree(app_state *AppState)
         if (FirstChildTraversal.GameTree)
         {
             CurrentNode = CurrentNode->FirstChild;
+            DebugCount += 1;
         }
         else if (NextSiblingTraversal.GameTree)
         {
             ShouldSwap = 1;
             CurrentNode = CurrentNode->NextSibling;
             AppState->TraversalNodes[CurrentNodeIndex].Visited = 1; /* TODO: The visited value should probably be set by TraverseFirstChild/NextSibling */
+            DebugCount += 1;
         }
         else
         {
@@ -1837,7 +1897,6 @@ internal void UpdateDisplayNodes(app_state *AppState)
 
     while (CurrentNode)
     {
-        DebugCount += 1;
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
 
         traversal_result FirstChildTraversal = TraverseFirstChild(AppState, CurrentNode);
@@ -1854,6 +1913,7 @@ internal void UpdateDisplayNodes(app_state *AppState)
             FirstChildDisplay->Position = Position;
             FirstChildDisplay->Visible = 1;
 
+            DebugCount += 1;
         }
         else if (NextSiblingTraversal.GameTree)
         {
@@ -1864,6 +1924,7 @@ internal void UpdateDisplayNodes(app_state *AppState)
             NextSiblingDisplay->Visible = 1;
 
             AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;  /* TODO: The visited value should probably be set by TraverseFirstChild/NextSibling */
+            DebugCount += 1;
         }
         else if (CurrentNode->Parent)
         {
@@ -2007,6 +2068,7 @@ int main(void)
     GlobalEstimatedCpuFrequency = ryn_EstimateCpuFrequency();
 
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "CHESS BOT");
+    SetWindowPosition(0, 0);
     SetTargetFPS(TARGET_FPS);
 
     app_state AppState = {0};
@@ -2058,9 +2120,9 @@ int main(void)
 
         UpdateDisplayNodes(&AppState);
         IncrementallySortGameTree(&AppState);
+
         DrawBoard(&AppState);
         DrawGameTree(&AppState);
-
         DebugDrawFreeTreeCount(&AppState);
 
         ryn_EndProfile();
@@ -2078,6 +2140,9 @@ int main(void)
                 Timer->ProcessedByteCount = 0;
             }
         }
+
+        Debug_CheckTheCountsOfTheTrees(&AppState);
+        Debug_CheckThatTreeDoesNotContainNode(&AppState, AppState.FreeGameTree, AppState.GameTreeRoot.FirstChild);
 
         EndDrawing();
     }
