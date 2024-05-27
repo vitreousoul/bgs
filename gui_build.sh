@@ -1,9 +1,31 @@
 #!/usr/bin/env sh
 
+DEBUG=1
+
+if [ -z "$1" ]; then
+    TARGET_NAME="gui_app";
+    PYTHON_LIBS=`python3-config --cflags --ldflags --embed`
+else
+    TARGET_NAME="$1";
+    PYTHON_LIBS=""
+fi
+
+
+if [ $DEBUG -eq 0 ]; then
+    echo "Optimized build";
+    TARGET="-O2 -o $TARGET_NAME.exe"
+elif [ $DEBUG -eq 1 ]; then
+    echo "Debug build";
+    TARGET="-g3 -O0 -DDEBUG=1 -o $TARGET_NAME.out"
+fi
+
+
 FRAMEWORKS="-framework CoreVideo -framework IOKit -framework Cocoa -framework GLUT -framework OpenGL"
 SETTINGS="-std=c99 -Wall -Wextra -Wstrict-prototypes -Wold-style-definition -Wmissing-prototypes -Wmissing-declarations"
-SOURCE_FILE="gui_app.c"
-PYTHON_LIBS=`/usr/local/Cellar/python@3.11/3.11.2_1/bin/python3.11-config --cflags --ldflags --embed`
+SETTINGS="$SETTINGS -Wno-unused-function"
+SETTINGS="$SETTINGS -Wno-unused-parameter"
+SETTINGS="$SETTINGS -Wno-unused-variable"
+SOURCE_FILE="$TARGET_NAME.c"
 RAY_LIB="clibs/libraylib.a"
 
-gcc $FRAMEWORKS $RAY_LIB $PYTHON_LIBS $SETTINGS $SOURCE_FILE -o gui_app.exe
+gcc $FRAMEWORKS $RAY_LIB $PYTHON_LIBS $SETTINGS $SOURCE_FILE $TARGET

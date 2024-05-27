@@ -18,6 +18,7 @@ const int TARGET_FPS = 30;
 #define BOARD_SIZE 8
 #define BOARD_PADDING 40
 const int SQUARE_SIZE_IN_PIXELS = (SCREEN_HEIGHT - (2 * BOARD_PADDING)) / 8;
+#define BOARD_SIZE_IN_PIXELS (BOARD_SIZE * SQUARE_SIZE_IN_PIXELS)
 
 const Color DARK_SQUARE_COLOR = {68,100,66,255};
 const Color LIGHT_SQUARE_COLOR = {128,208,140,255};
@@ -25,12 +26,11 @@ const Color SELECTED_SQUARE_COLOR = {105,85,205,59};
 const Color SELECTED_SQUARE_OUTLINE_COLOR = {100,20,100,255};
 
 double BOARD[BOARD_SIZE][BOARD_SIZE];
-app_state APP_STATE;
+static app_state APP_STATE;
 
 #define PIECE_TEXTURE_SIZE 120
 
-// TODO: RANK_TABLE is in reverse because the y-axis is flipped, we should probably just fix our coordinate system......
-char RANK_TABLE[8] = {'8','7','6','5','4','3','2','1'};
+char RANK_TABLE[8] = {'1','2','3','4','5','6','7','8'};
 char FILE_TABLE[8] = {'a','b','c','d','e','f','g','h'};
 
 ivec2 PIECE_TEXTURE_OFFSET[255] = {
@@ -210,7 +210,7 @@ static Vector2 PositionToSquarePosition(Vector2 Position)
     Vector2 Result;
     Vector2 OffsetPosition;
     OffsetPosition.x = (Position.x - BOARD_PADDING) / SQUARE_SIZE_IN_PIXELS;
-    OffsetPosition.y = (Position.y - BOARD_PADDING) / SQUARE_SIZE_IN_PIXELS;
+    OffsetPosition.y = BOARD_SIZE - ((Position.y - BOARD_PADDING) / SQUARE_SIZE_IN_PIXELS);
     if(PositionInsideBoard(OffsetPosition))
     {
         Result = (Vector2){OffsetPosition.x, OffsetPosition.y};
@@ -261,11 +261,12 @@ static void HandleMove(PyObject *Board)
     int HasMoveSquare = APP_STATE.MoveSquare.X >= 0 && APP_STATE.MoveSquare.Y >= 0;
     if (HasSelectedSquare && HasMoveSquare)
     {
-        char MoveString[4] = {
+        char MoveString[5] = {
             FILE_TABLE[APP_STATE.SelectedSquare.X],
             RANK_TABLE[APP_STATE.SelectedSquare.Y],
             FILE_TABLE[APP_STATE.MoveSquare.X],
             RANK_TABLE[APP_STATE.MoveSquare.Y],
+            0
         };
         MakeMove(Board, MoveString);
         APP_STATE.SelectedSquare = (ivec2){-1,-1};
@@ -284,7 +285,7 @@ static void DrawBoard()
             double SquareFloatValue = BOARD[Row][Col] > 0.0f ? BOARD[Row][Col] : 0.0f;
             int SquareIntValue = (int)SquareFloatValue;
             int X = (Col * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
-            int Y = (Row * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
+            int Y = (((BOARD_SIZE - 1) - Row) * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
             int IsDarkSquare = (X % 2) != (Y % 2);
             Color SquareColor = IsDarkSquare ? DARK_SQUARE_COLOR : LIGHT_SQUARE_COLOR;
             DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColor);
