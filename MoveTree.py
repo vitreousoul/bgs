@@ -5,19 +5,10 @@ Created on Sun May 26 09:44:55 2024
 @author: zachg
 """
 
-# -*- coding: utf-8 -*-
-"""
-Created on Mon May 20 18:50:05 2024
-
-@author: zachg
-"""
-
-# https://python.plainenglish.io/data-structures-in-python-tree-410255b87107
-
 from Board import Board
 
-# TODO: When the first move isn't valid, need to make it not able to continue
-# Find a way to actually delete the board states from memory as you go
+# TODO: Find a way to actually delete the board states from memory as you go
+# TODO: Find ways to prune reduant branches
 
 class TreeNode:
     def __init__(self,board,parent,move):
