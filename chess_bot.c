@@ -6,6 +6,10 @@
     Engine Functionality:
         TODO: Create game_state valuing functions.
         TODO: Evaluate the ChildScoreAverage value for a game_tree's list of children.
+        TODO: Have the engine automatically pick the highest rated move.
+
+    GUI:
+        TODO: Allow the user to make castling moves. The game-tree already contains castling, so the ui just needs to detect castle moves.
 
     Dev Features:
         TODO: Should we create an iterator for game_trees?
@@ -991,6 +995,7 @@ internal void Look(app_state *AppState, game_state *GameState, piece Piece, s8 R
 
         s32 NewSquare = CurrentRow * 8 + CurrentCol;
 
+        /* TODO: This if/else looks bad... */
         if (Is_Valid_Square(NewSquare) && Is_Valid_Piece(AppState->Squares[NewSquare]))
         {
             if (Get_Piece_Color(AppState->Squares[NewSquare]) != PieceColor)
@@ -1063,18 +1068,21 @@ internal void LookAllDirections(app_state *AppState, game_state *GameState, piec
     LookDownRight( AppState, GameState, Piece, Row, Col, MaxLength);
 }
 
+#define En_Passant_Row_White 4
+#define En_Passant_Row_Black 3
+
 internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col)
 {
     u8 PieceColor = Get_Piece_Color(Piece);
     s8 Multiplier = 1;
     s8 StartingRow = 1;
-    s8 EnPassantRow = 5;
+    s8 EnPassantRow = En_Passant_Row_White;
 
     if (Is_Black_Piece(Piece))
     {
         Multiplier = -1;
         StartingRow = 6;
-        EnPassantRow = 2;
+        EnPassantRow = En_Passant_Row_Black;
     }
 
     /* NOTE: Move forward */
@@ -1552,7 +1560,6 @@ internal void HandleMove(app_state *AppState)
 
     if (AppState->GameTreeCurrent && HasSelectedSquare && HasMoveSquare)
     {
-        /* TODO: Call MakeMove... */
         game_state TempGameState;
 
         move Move;
@@ -1576,6 +1583,14 @@ internal void HandleMove(app_state *AppState)
 
             if (Is_Valid_Piece(Move.Piece) && IsMoveablePiece)
             {
+                b32 WhiteEnPassant = Is_White_Turn(&TempGameState) && SelectedSquare.Y == En_Passant_Row_White;
+                b32 BlackEnPassant = Is_Black_Turn(&TempGameState) && SelectedSquare.Y == En_Passant_Row_Black;
+
+                if (WhiteEnPassant || BlackEnPassant)
+                {
+                    Move.Type = move_type_EnPassant;
+                }
+
                 MakeMove(AppState, &TempGameState, Move);
                 game_tree *Sibling = AppState->GameTreeCurrent->FirstChild;
 
