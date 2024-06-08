@@ -1,6 +1,6 @@
 /*
     BUGS:
-        TODO:
+        TODO: If you try to do an illegal move, the next legal move you try does not work. You have to enter the legal move twice...
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
