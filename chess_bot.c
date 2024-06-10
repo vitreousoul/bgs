@@ -1,6 +1,6 @@
 /*
     BUGS:
-        TODO: If you try to do an illegal move, the next legal move you try does not work. You have to enter the legal move twice...
+        ...
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
@@ -822,7 +822,11 @@ internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
         b32 IsWhiteTurn = Is_White_Turn(GameState);
         b32 WhitePieceAndTurn = IsWhitePiece && IsWhiteTurn;
         b32 BlackPieceAndTurn = !(IsWhitePiece || IsWhiteTurn);
-        Assert(WhitePieceAndTurn || BlackPieceAndTurn);
+
+        if (!(WhitePieceAndTurn || BlackPieceAndTurn))
+        {
+            return;
+        }
     }
 
     switch (Move.Type)
@@ -1582,9 +1586,15 @@ internal void HandleMove(app_state *AppState)
     if (AppState->GameTreeCurrent && HasSelectedSquare && HasMoveSquare)
     {
         game_state TempGameState;
+        CopyGameState(&AppState->GameTreeCurrent->State, &TempGameState);
+        InitializeSquares(AppState->Squares, &TempGameState);
+
+        s32 SquareIndex = Get_Square_Index(SelectedSquare.Y, SelectedSquare.X);
+        Assert(SquareIndex >= 0 && SquareIndex < 64);
 
         move Move;
         Move.Type = move_type_Move; /* TODO: Handle castling, and en passant. */
+        Move.Piece = AppState->Squares[SquareIndex];
         Move.BeginSquare = Get_Square_Index(SelectedSquare.Y, SelectedSquare.X);
         Move.EndSquare = Get_Square_Index(MoveSquare.Y, MoveSquare.X);
 
@@ -1592,15 +1602,12 @@ internal void HandleMove(app_state *AppState)
 
         if (Is_Valid_Square(Move.BeginSquare) && Is_Valid_Square(Move.EndSquare) && MoveSquaresAreDifferent)
         {
-            Move.Piece = AppState->Squares[Move.BeginSquare];
-
-            CopyGameState(&AppState->GameTreeCurrent->State, &TempGameState);
-            InitializeSquares(AppState->Squares, &TempGameState);
-
             /* @CopyPasta */
             b32 IsWhiteTurn = Flag_Get(TempGameState.Flags, Whose_Turn_Flag) == 0;
             b32 IsWhitePiece = Is_White_Piece(Move.Piece);
             b32 IsMoveablePiece = (IsWhitePiece && IsWhiteTurn) || !(IsWhitePiece || IsWhiteTurn);
+
+            Move.Piece = AppState->Squares[Move.BeginSquare];
 
             if (Is_Valid_Piece(Move.Piece) && IsMoveablePiece)
             {
