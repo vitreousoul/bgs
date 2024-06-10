@@ -1,6 +1,6 @@
 /*
     BUGS:
-        ...
+        TODO: First play 1. Nf3 e5  2. Nxe5 Ke7 then try playing Ng6+ or any other move with the same knight. These are moves that are in the tree but you cannot input them for some reason.
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
@@ -1574,6 +1574,20 @@ internal void ClearDisplayNodes(app_state *AppState)
     }
 }
 
+internal void Debug_PrintBoard(app_state *AppState)
+{
+    for (s32 Row = 7; Row >= 0; --Row)
+    {
+        for (s32 Col = 0; Col < 8; ++Col)
+        {
+            s32 SquareIndex = Get_Square_Index(Row, Col);
+            printf("%2d  ", AppState->Squares[SquareIndex]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
 internal void HandleMove(app_state *AppState)
 {
     ui *Ui = &AppState->Ui;
@@ -1646,6 +1660,8 @@ internal void HandleMove(app_state *AppState)
 
                 MakeMove(AppState, &TempGameState, Move);
                 game_tree *Sibling = AppState->GameTreeCurrent->FirstChild;
+
+                /* Debug_PrintBoard(AppState); */
 
                 while (Sibling)
                 {
