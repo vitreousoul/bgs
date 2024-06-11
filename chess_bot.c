@@ -1,18 +1,17 @@
 /*
     BUGS:
-        TODO: Fix the game_tree leak that occurs when making moves.
-        TODO: En-passant is broken at the moment. Please fix.
+        ...
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
         TODO: Evaluate the ChildScoreAverage value for a game_tree's list of children.
+        TODO: Have the engine automatically pick the highest rated move.
+
+    GUI:
+        ...
 
     Dev Features:
         TODO: Should we create an iterator for game_trees?
-
-    Turn into a library (maybe):
-        TODO: Convert this into an ".h" file and use it in "gui_app.c" or wherever.
-        TODO: Namespace all names so that chess_bot can become a library.
 */
 #include <stdio.h>
 #include <stdint.h>
@@ -485,6 +484,65 @@ internal void CopyGameState(game_state *Source, game_state *Destination)
     }
 }
 
+/* TODO: Compress these castling functions... */
+internal b32 WhiteCanQueenSideCastle(app_state *AppState, game_state *GameState)
+{
+    b32 KingInOriginalPosition = GameState->Piece[piece_White_King] == E1;
+    b32 RookInOriginalPosition = GameState->Piece[piece_White_Queen_Rook] == A1;
+    b32 QueenSideCastleFlag = Flag_Get(GameState->Flags, White_Queen_Side_Castle_Flag);
+    b32 B1Open = !Is_Valid_Piece(AppState->Squares[B1]);
+    b32 C1Open = !Is_Valid_Piece(AppState->Squares[C1]);
+    b32 D1Open = !Is_Valid_Piece(AppState->Squares[D1]);
+
+    b32 CanCastle = (KingInOriginalPosition && RookInOriginalPosition &&
+                     QueenSideCastleFlag && B1Open && C1Open && D1Open);
+
+    return CanCastle;
+}
+
+internal b32 WhiteCanKingSideCastle(app_state *AppState, game_state *GameState)
+{
+    b32 KingInOriginalPosition = GameState->Piece[piece_White_King] == E1;
+    b32 RookInOriginalPosition = GameState->Piece[piece_White_King_Rook] == H1;
+    b32 KingSideCastleFlag = Flag_Get(GameState->Flags, White_King_Side_Castle_Flag);
+    b32 F1Open = !Is_Valid_Piece(AppState->Squares[F1]);
+    b32 G1Open = !Is_Valid_Piece(AppState->Squares[G1]);
+
+    b32 CanCastle = (KingInOriginalPosition && RookInOriginalPosition &&
+                     KingSideCastleFlag && F1Open && G1Open);
+
+    return CanCastle;
+}
+
+internal b32 BlackCanQueenSideCastle(app_state *AppState, game_state *GameState)
+{
+    b32 KingInOriginalPosition = GameState->Piece[piece_Black_King] == E8;
+    b32 RookInOriginalPosition = GameState->Piece[piece_Black_Queen_Rook] == A8;
+    b32 QueenSideCastleFlag = Flag_Get(GameState->Flags, Black_Queen_Side_Castle_Flag);
+    b32 B8Open = !Is_Valid_Piece(AppState->Squares[B8]);
+    b32 C8Open = !Is_Valid_Piece(AppState->Squares[C8]);
+    b32 D8Open = !Is_Valid_Piece(AppState->Squares[D8]);
+
+    b32 CanCastle = (KingInOriginalPosition && RookInOriginalPosition &&
+                     QueenSideCastleFlag && B8Open && C8Open && D8Open);
+
+    return CanCastle;
+}
+
+internal b32 BlackCanKingSideCastle(app_state *AppState, game_state *GameState)
+{
+    b32 KingInOriginalPosition = GameState->Piece[piece_Black_King] == E8;
+    b32 RookInOriginalPosition = GameState->Piece[piece_Black_King_Rook] == H8;
+    b32 KingSideCastleFlag = Flag_Get(GameState->Flags, Black_King_Side_Castle_Flag);
+    b32 F8Open = !Is_Valid_Piece(AppState->Squares[F8]);
+    b32 G8Open = !Is_Valid_Piece(AppState->Squares[G8]);
+
+    b32 CanCastle = (KingInOriginalPosition && RookInOriginalPosition &&
+                     KingSideCastleFlag && F8Open && G8Open);
+
+    return CanCastle;
+}
+
 internal void ClearTraverals(app_state *AppState)
 {
     for (u64 I = 0; I < ArrayCount(AppState->TraversalNodes); ++I)
@@ -764,7 +822,11 @@ internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
         b32 IsWhiteTurn = Is_White_Turn(GameState);
         b32 WhitePieceAndTurn = IsWhitePiece && IsWhiteTurn;
         b32 BlackPieceAndTurn = !(IsWhitePiece || IsWhiteTurn);
-        Assert(WhitePieceAndTurn || BlackPieceAndTurn);
+
+        if (!(WhitePieceAndTurn || BlackPieceAndTurn))
+        {
+            return;
+        }
     }
 
     switch (Move.Type)
@@ -991,6 +1053,7 @@ internal void Look(app_state *AppState, game_state *GameState, piece Piece, s8 R
 
         s32 NewSquare = CurrentRow * 8 + CurrentCol;
 
+        /* TODO: This if/else looks bad... */
         if (Is_Valid_Square(NewSquare) && Is_Valid_Piece(AppState->Squares[NewSquare]))
         {
             if (Get_Piece_Color(AppState->Squares[NewSquare]) != PieceColor)
@@ -1063,18 +1126,21 @@ internal void LookAllDirections(app_state *AppState, game_state *GameState, piec
     LookDownRight( AppState, GameState, Piece, Row, Col, MaxLength);
 }
 
+#define En_Passant_Row_White 4
+#define En_Passant_Row_Black 3
+
 internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col)
 {
     u8 PieceColor = Get_Piece_Color(Piece);
     s8 Multiplier = 1;
     s8 StartingRow = 1;
-    s8 EnPassantRow = 5;
+    s8 EnPassantRow = En_Passant_Row_White;
 
     if (Is_Black_Piece(Piece))
     {
         Multiplier = -1;
         StartingRow = 6;
-        EnPassantRow = 2;
+        EnPassantRow = En_Passant_Row_Black;
     }
 
     /* NOTE: Move forward */
@@ -1176,60 +1242,27 @@ internal void LookKnight(app_state *AppState, game_state *GameState, piece Piece
 
 internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece)
 {
-    /* TODO: Compress the following code. */
-    if (Is_White_Piece(Piece) && GameState->Piece[Piece] == E1)
+    if (Is_White_Turn(GameState))
     {
-        if (Flag_Get(GameState->Flags, White_Queen_Side_Castle_Flag) &&
-            GameState->Piece[piece_White_Queen_Rook] == A1)
+        if (WhiteCanQueenSideCastle(AppState, GameState))
         {
-            b32 B1Open = !Is_Valid_Piece(AppState->Squares[B1]);
-            b32 C1Open = !Is_Valid_Piece(AppState->Squares[C1]);
-            b32 D1Open = !Is_Valid_Piece(AppState->Squares[D1]);
-
-            if (B1Open && C1Open && D1Open)
-            {
-                AddPotential(AppState, GameState, Piece, 255, move_type_QueenCastle);
-            }
+            AddPotential(AppState, GameState, Piece, 255, move_type_QueenCastle);
+        }
+        else if (WhiteCanKingSideCastle(AppState, GameState))
+        {
+            AddPotential(AppState, GameState, Piece, 255, move_type_KingCastle);
         }
 
-
-        if (Flag_Get(GameState->Flags, White_King_Side_Castle_Flag) &&
-            GameState->Piece[piece_White_King_Rook] == H1)
-        {
-            b32 F1Open = !Is_Valid_Piece(AppState->Squares[F1]);
-            b32 G1Open = !Is_Valid_Piece(AppState->Squares[G1]);
-
-            if (F1Open && G1Open)
-            {
-                AddPotential(AppState, GameState, Piece, 255, move_type_KingCastle);
-            }
-        }
     }
-    else if (Is_Black_Piece(Piece) && GameState->Piece[Piece] == E8)
+    else if (Is_Black_Turn(GameState))
     {
-        if (Flag_Get(GameState->Flags, Black_Queen_Side_Castle_Flag) &&
-            GameState->Piece[piece_Black_Queen_Rook] == A8)
+        if (BlackCanQueenSideCastle(AppState, GameState))
         {
-            b32 B8Open = !Is_Valid_Piece(AppState->Squares[B8]);
-            b32 C8Open = !Is_Valid_Piece(AppState->Squares[C8]);
-            b32 D8Open = !Is_Valid_Piece(AppState->Squares[D8]);
-
-            if (B8Open && C8Open && D8Open)
-            {
-                AddPotential(AppState, GameState, Piece, 255, move_type_QueenCastle);
-            }
+            AddPotential(AppState, GameState, Piece, 255, move_type_QueenCastle);
         }
-
-        if (Flag_Get(GameState->Flags, Black_King_Side_Castle_Flag) &&
-            GameState->Piece[piece_Black_King_Rook] == H8)
+        else if (BlackCanKingSideCastle(AppState, GameState))
         {
-            b32 F8Open = !Is_Valid_Piece(AppState->Squares[F8]);
-            b32 G8Open = !Is_Valid_Piece(AppState->Squares[G8]);
-
-            if (F8Open && G8Open)
-            {
-                AddPotential(AppState, GameState, Piece, 255, move_type_KingCastle);
-            }
+            AddPotential(AppState, GameState, Piece, 255, move_type_KingCastle);
         }
     }
 }
@@ -1541,6 +1574,34 @@ internal void ClearDisplayNodes(app_state *AppState)
     }
 }
 
+internal void Debug_PrintPieces(game_state *GameState)
+{
+    for (s32 Row = 3; Row >= 0; --Row)
+    {
+        for (s32 Col = 0; Col < 8; ++Col)
+        {
+            s32 Index = Row * 8 + Col;
+            printf("%3d ", GameState->Piece[Index]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
+internal void Debug_PrintBoard(app_state *AppState)
+{
+    for (s32 Row = 7; Row >= 0; --Row)
+    {
+        for (s32 Col = 0; Col < 8; ++Col)
+        {
+            s32 SquareIndex = Get_Square_Index(Row, Col);
+            printf("%2d  ", AppState->Squares[SquareIndex]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
 internal void HandleMove(app_state *AppState)
 {
     ui *Ui = &AppState->Ui;
@@ -1552,11 +1613,16 @@ internal void HandleMove(app_state *AppState)
 
     if (AppState->GameTreeCurrent && HasSelectedSquare && HasMoveSquare)
     {
-        /* TODO: Call MakeMove... */
         game_state TempGameState;
+        CopyGameState(&AppState->GameTreeCurrent->State, &TempGameState);
+        InitializeSquares(AppState->Squares, &TempGameState);
+
+        s32 SquareIndex = Get_Square_Index(SelectedSquare.Y, SelectedSquare.X);
+        Assert(SquareIndex >= 0 && SquareIndex < 64);
 
         move Move;
         Move.Type = move_type_Move; /* TODO: Handle castling, and en passant. */
+        Move.Piece = AppState->Squares[SquareIndex];
         Move.BeginSquare = Get_Square_Index(SelectedSquare.Y, SelectedSquare.X);
         Move.EndSquare = Get_Square_Index(MoveSquare.Y, MoveSquare.X);
 
@@ -1564,18 +1630,57 @@ internal void HandleMove(app_state *AppState)
 
         if (Is_Valid_Square(Move.BeginSquare) && Is_Valid_Square(Move.EndSquare) && MoveSquaresAreDifferent)
         {
-            Move.Piece = AppState->Squares[Move.BeginSquare];
-
-            CopyGameState(&AppState->GameTreeCurrent->State, &TempGameState);
-            InitializeSquares(AppState->Squares, &TempGameState);
-
             /* @CopyPasta */
             b32 IsWhiteTurn = Flag_Get(TempGameState.Flags, Whose_Turn_Flag) == 0;
             b32 IsWhitePiece = Is_White_Piece(Move.Piece);
             b32 IsMoveablePiece = (IsWhitePiece && IsWhiteTurn) || !(IsWhitePiece || IsWhiteTurn);
 
+            Move.Piece = AppState->Squares[Move.BeginSquare];
+
             if (Is_Valid_Piece(Move.Piece) && IsMoveablePiece)
             {
+                b32 IsEnPassantCaptureMotion = (MoveSquare.X == SelectedSquare.X + 1 ||
+                                                MoveSquare.X == SelectedSquare.X - 1);
+
+                b32 WhiteEnPassant = (Is_White_Turn(&TempGameState) &&
+                                      SelectedSquare.Y == En_Passant_Row_White &&
+                                      IsEnPassantCaptureMotion);
+                b32 BlackEnPassant = (Is_Black_Turn(&TempGameState) &&
+                                      SelectedSquare.Y == En_Passant_Row_Black &&
+                                      IsEnPassantCaptureMotion);
+
+                if (WhiteEnPassant || BlackEnPassant)
+                {
+                    Move.Type = move_type_EnPassant;
+                }
+
+                if (Move.Piece == piece_White_King &&
+                    Move.EndSquare == C1 &&
+                    WhiteCanQueenSideCastle(AppState, &TempGameState))
+                {
+                    Move.Type = move_type_QueenCastle;
+                }
+                else if (Move.Piece == piece_White_King &&
+                         Move.EndSquare == G1 &&
+                         WhiteCanKingSideCastle(AppState, &TempGameState))
+                {
+                    Move.Type = move_type_KingCastle;
+                }
+                else if (Move.Piece == piece_Black_King &&
+                    Move.EndSquare == C8 &&
+                    BlackCanQueenSideCastle(AppState, &TempGameState))
+                {
+                    Move.Type = move_type_QueenCastle;
+                }
+                else if (Move.Piece == piece_Black_King &&
+                         Move.EndSquare == G8 &&
+                         BlackCanKingSideCastle(AppState, &TempGameState))
+                {
+                    Move.Type = move_type_KingCastle;
+                }
+
+                /* Debug_PrintPieces(&TempGameState); */
+
                 MakeMove(AppState, &TempGameState, Move);
                 game_tree *Sibling = AppState->GameTreeCurrent->FirstChild;
 
@@ -2154,10 +2259,3 @@ int main(void)
 
     return 0;
 }
-
-/* TODO: Remove these undefs, unless this file really will become a .h library... */
-#undef u8
-#undef u32
-#undef b32
-#undef s8
-#undef s32

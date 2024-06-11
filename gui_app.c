@@ -272,6 +272,7 @@ static void HandleMove(PyObject *Board)
         APP_STATE.SelectedSquare = (ivec2){-1,-1};
         APP_STATE.MoveSquare = (ivec2){-1,-1};
     }
+    UpdateBoardState(Board);
 }
 
 static void DrawBoard()
@@ -327,7 +328,6 @@ int main(int argc, char **argv)
     {
         UpdateInput();
         HandleMove(Board);
-        UpdateBoardState(Board);
         BeginDrawing();
         ClearBackground(RAYWHITE);
         DrawBoard();
