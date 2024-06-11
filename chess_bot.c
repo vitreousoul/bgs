@@ -1,6 +1,6 @@
 /*
     BUGS:
-        TODO: First play 1. Nf3 e5  2. Nxe5 Ke7 then try playing Ng6+ or any other move with the same knight. These are moves that are in the tree but you cannot input them for some reason.
+        ...
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
@@ -8,7 +8,7 @@
         TODO: Have the engine automatically pick the highest rated move.
 
     GUI:
-        TODO: Allow the user to make castling moves. The game-tree already contains castling, so the ui just needs to detect castle moves.
+        ...
 
     Dev Features:
         TODO: Should we create an iterator for game_trees?
@@ -1574,6 +1574,20 @@ internal void ClearDisplayNodes(app_state *AppState)
     }
 }
 
+internal void Debug_PrintPieces(game_state *GameState)
+{
+    for (s32 Row = 3; Row >= 0; --Row)
+    {
+        for (s32 Col = 0; Col < 8; ++Col)
+        {
+            s32 Index = Row * 8 + Col;
+            printf("%3d ", GameState->Piece[Index]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
 internal void Debug_PrintBoard(app_state *AppState)
 {
     for (s32 Row = 7; Row >= 0; --Row)
@@ -1625,8 +1639,15 @@ internal void HandleMove(app_state *AppState)
 
             if (Is_Valid_Piece(Move.Piece) && IsMoveablePiece)
             {
-                b32 WhiteEnPassant = Is_White_Turn(&TempGameState) && SelectedSquare.Y == En_Passant_Row_White;
-                b32 BlackEnPassant = Is_Black_Turn(&TempGameState) && SelectedSquare.Y == En_Passant_Row_Black;
+                b32 IsEnPassantCaptureMotion = (MoveSquare.X == SelectedSquare.X + 1 ||
+                                                MoveSquare.X == SelectedSquare.X - 1);
+
+                b32 WhiteEnPassant = (Is_White_Turn(&TempGameState) &&
+                                      SelectedSquare.Y == En_Passant_Row_White &&
+                                      IsEnPassantCaptureMotion);
+                b32 BlackEnPassant = (Is_Black_Turn(&TempGameState) &&
+                                      SelectedSquare.Y == En_Passant_Row_Black &&
+                                      IsEnPassantCaptureMotion);
 
                 if (WhiteEnPassant || BlackEnPassant)
                 {
@@ -1658,10 +1679,10 @@ internal void HandleMove(app_state *AppState)
                     Move.Type = move_type_KingCastle;
                 }
 
+                /* Debug_PrintPieces(&TempGameState); */
+
                 MakeMove(AppState, &TempGameState, Move);
                 game_tree *Sibling = AppState->GameTreeCurrent->FirstChild;
-
-                /* Debug_PrintBoard(AppState); */
 
                 while (Sibling)
                 {
