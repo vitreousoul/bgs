@@ -1,8 +1,11 @@
 /*
     BUGS:
-        ...
+        TODO: The user cannot input a move that puts the opponent into check, even though the move exists in the game tree (this is most likely due to the check flag being different between the game_states that are checked for equality).
 
     Engine Functionality:
+        Check Checking:
+            TODO: Check for knight checks...
+            TODO: Check for pawn checks...
         TODO: Create game_state valuing functions.
         TODO: Evaluate the ChildScoreAverage value for a game_tree's list of children.
         TODO: Have the engine automatically pick the highest rated move.
@@ -294,12 +297,6 @@ global_variable u8 PieceTypeTable[piece_Count] = {
     [piece_Black_Pawn_H]        = piece_type_Pawn,
 };
 
-#define Whose_Turn_Flag              (1 << 0)
-#define White_Queen_Side_Castle_Flag (1 << 1)
-#define White_King_Side_Castle_Flag  (1 << 2)
-#define Black_Queen_Side_Castle_Flag (1 << 3)
-#define Black_King_Side_Castle_Flag  (1 << 4)
-
 #define Flag_Get(  flags, flag) (((flags) &  (flag)) != 0)
 #define Flag_Set(  flags, flag)  ((flags) = (flags) | flag)
 #define Flag_Unset(flags, flag)  ((flags) = (flags) & ~(flag))
@@ -327,6 +324,19 @@ typedef struct
     square BeginSquare;
     square EndSquare;
 } move;
+
+typedef enum
+{
+    Whose_Turn_Flag              = (1 << 0),
+
+    White_Queen_Side_Castle_Flag = (1 << 1),
+    White_King_Side_Castle_Flag  = (1 << 2),
+    Black_Queen_Side_Castle_Flag = (1 << 3),
+    Black_King_Side_Castle_Flag  = (1 << 4),
+
+    White_In_Check_Flag          = (1 << 5),
+    Black_In_Check_Flag          = (1 << 6)
+} game_state_flag;
 
 typedef struct
 {
@@ -979,6 +989,84 @@ internal f32 GetGameStateScore(app_state *AppState, game_state *GameState)
     return Score;
 }
 
+internal void CheckIfKingIsInCheck(app_state *AppState, game_state *GameState, piece KingPiece)
+{
+    Assert(KingPiece == piece_White_King || KingPiece == piece_Black_King);
+    b32 IsInCheck = 0;
+
+    s8 RowColOffsets[8][2] = {
+        {-1,-1},{-1, 0},{-1, 1},
+        { 0,-1},        { 0, 1},
+        { 1,-1},{ 1, 0},{ 1, 1},
+    };
+
+    s8 KingRow = GameState->Piece[KingPiece] / 8;
+    s8 KingCol = GameState->Piece[KingPiece] % 8;
+    u32 KingPieceColor = Get_Piece_Color(KingPiece);
+
+    for (s32 I = 0; I < 8 && !IsInCheck; ++I)
+    {
+        s32 RowOffset = RowColOffsets[I][0];
+        s32 ColOffset = RowColOffsets[I][1];
+
+        for (s32 Distance = 1; Distance < 8 && !IsInCheck; ++Distance)
+        {
+            s32 TargetRow = RowOffset * Distance + KingRow;
+            s32 TargetCol = ColOffset * Distance + KingCol;
+
+            s32 Square = Get_Square_Index(TargetRow, TargetCol);
+            b32 SquareIsValid = Is_Valid_Square(Square);
+
+            if (SquareIsValid)
+            {
+                piece TargetPiece = AppState->Squares[Square];
+
+                if (Is_Valid_Piece(TargetPiece))
+                {
+                    piece_type PieceType = PieceTypeTable[TargetPiece];
+                    u8 TargetPieceColor = Get_Piece_Color(TargetPiece);
+
+                    if (KingPieceColor == TargetPieceColor)
+                    {
+                        break;
+                    }
+
+                    switch (I)
+                    {
+                    case 0: case 2: case 5: case 7:
+                    {
+                        if (PieceType == piece_type_Bishop || PieceType == piece_type_Queen)
+                        {
+                            IsInCheck = 1;
+                        }
+                    } break;
+                    case 1: case 3: case 4: case 6:
+                    {
+                        if (PieceType == piece_type_Rook || PieceType == piece_type_Queen)
+                        {
+                            IsInCheck = 1;
+                        }
+                    } break;
+                    }
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+
+    /* TODO: Check for knight checks... */
+    /* TODO: Check for pawn checks... */
+
+    if (IsInCheck)
+    {
+        u32 CheckFlag = KingPiece == piece_White_King ? White_In_Check_Flag : Black_In_Check_Flag;
+        Flag_Set(GameState->Flags, CheckFlag);
+    }
+}
+
 internal void AddPotential(app_state *AppState, game_state *GameState, piece Piece, square EndSquare, move_type MoveType)
 {
     Assert(!AppState->FreeGameTree || AppState->FreeGameTree != AppState->FreeGameTree->NextSibling);
@@ -997,6 +1085,9 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
     Move.Piece = Piece;
     Move.BeginSquare = BeginSquare;
     Move.EndSquare = EndSquare;
+
+    CheckIfKingIsInCheck(AppState, GameState, piece_White_King);
+    CheckIfKingIsInCheck(AppState, GameState, piece_Black_King);
 
     game_state NewGameState;
     CopyGameState(GameState, &NewGameState);
@@ -1053,19 +1144,29 @@ internal void Look(app_state *AppState, game_state *GameState, piece Piece, s8 R
 
         s32 NewSquare = CurrentRow * 8 + CurrentCol;
 
-        /* TODO: This if/else looks bad... */
-        if (Is_Valid_Square(NewSquare) && Is_Valid_Piece(AppState->Squares[NewSquare]))
+        if (Is_Valid_Square(NewSquare))
         {
-            if (Get_Piece_Color(AppState->Squares[NewSquare]) != PieceColor)
+            piece TargetPiece = AppState->Squares[NewSquare];
+            u32 TargetPieceColor = Get_Piece_Color(TargetPiece);
+
+            if (Is_Valid_Piece(TargetPiece))
+            {
+                if (TargetPieceColor != PieceColor)
+                {
+                    AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
+                }
+
+                break;
+            }
+            else
             {
                 AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
             }
-
-            break;
         }
         else
         {
-            AddPotential(AppState, GameState, Piece, NewSquare, move_type_Move);
+            /* NOTE: We hit an invalid square, so break the loop. */
+            break;
         }
 
         CurrentRow += RowOffset;
@@ -1707,6 +1808,7 @@ internal void DrawBoard(app_state *AppState)
 {
     ryn_BEGIN_TIMED_BLOCK(timed_block_DrawBoard);
     ui *Ui = &AppState->Ui;
+    game_state CurrentState = AppState->GameTreeCurrent->State;
 
     { /* NOTE: Draw board backing. */
         int BorderWidth = 6;
@@ -1754,7 +1856,7 @@ internal void DrawBoard(app_state *AppState)
     /* NOTE: Draw pieces. */
     for (s32 I = 0; I < piece_Count; ++I)
     {
-        square Square = AppState->GameTreeCurrent->State.Piece[I];
+        square Square = CurrentState.Piece[I];
 
         if (Is_Valid_Square(Square) && IsTextureReady(Ui->ChessPieceTexture))
         {
@@ -1781,6 +1883,22 @@ internal void DrawBoard(app_state *AppState)
         Color Color = UiColor[AppState->Ui.Theme][ui_color_TextPrimary];
 
         DrawText(Buff, 4.0f, 4.0f, 16.0f, Color);
+    }
+
+    { /* NOTE: Debug display if a player is in check. */
+        b32 WhiteIsInCheck = Flag_Get(CurrentState.Flags, White_In_Check_Flag);
+        b32 BlackIsInCheck = Flag_Get(CurrentState.Flags, Black_In_Check_Flag);
+        if (WhiteIsInCheck && BlackIsInCheck)
+        {
+            Debug_PrintPieces(&CurrentState);
+        }
+        Assert(!(WhiteIsInCheck && BlackIsInCheck));
+
+        if (WhiteIsInCheck || BlackIsInCheck)
+        {
+            char *CheckMessage = WhiteIsInCheck ? "White in check" : "Black in check";
+            DrawText(CheckMessage, 8, 24, 18, (Color){180,20,20,255});
+        }
     }
 
 #if 0
