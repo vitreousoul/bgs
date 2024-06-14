@@ -1057,7 +1057,32 @@ internal void CheckIfKingIsInCheck(app_state *AppState, game_state *GameState, p
         }
     }
 
-    /* TODO: Check for knight checks... */
+    { /* NOTE: Check for knight checks... */
+        s8 KnightOffsets[8][2] = {{1,2},{2,1},{2,-1},{1,-2},{-1,-2},{-2,-1},{-2,1},{-1,2}};
+        u8 KingPieceColor = Get_Piece_Color(KingPiece);
+
+        for (s32 I = 0; I < 8; ++I)
+        {
+            s8 TargetRow = KingRow + KnightOffsets[I][0];
+            s8 TargetCol = KingCol + KnightOffsets[I][1];
+
+            if (Is_Valid_Row_Col(TargetRow, TargetCol))
+            {
+                s32 NewSquare = TargetRow * 8 + TargetCol;
+                piece NewPiece = AppState->Squares[NewSquare];
+
+                if (Is_Valid_Square(NewSquare) &&
+                    Is_Valid_Piece(NewPiece) &&
+                    (PieceTypeTable[NewPiece] == piece_type_Knight) &&
+                    (Get_Piece_Color(NewPiece) != KingPieceColor))
+                {
+                    IsInCheck = 1;
+                    break;
+                }
+            }
+        }
+    }
+
     /* TODO: Check for pawn checks... */
 
     if (IsInCheck)
