@@ -1,6 +1,6 @@
 /*
     BUGS:
-        TODO: The user cannot input a move that puts the opponent into check, even though the move exists in the game tree (this is most likely due to the check flag being different between the game_states that are checked for equality).
+        TODO: The user cannot input a move that results in checkmate, this is likely due to not properly handling the game-over flag when comparing game states in HandleMove.
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
@@ -294,16 +294,16 @@ global_variable u8 PieceTypeTable[piece_Count] = {
     [piece_Black_Pawn_H]        = piece_type_Pawn,
 };
 
-#define Flag_Get(  flags, flag) (((flags) &  (flag)) != 0)
-#define Flag_Set(  flags, flag)  ((flags) = (flags) | flag)
-#define Flag_Unset(flags, flag)  ((flags) = (flags) & ~(flag))
-#define Flag_Toggle(flags, flag)  (Flag_Get((flags), (flag)) ? Flag_Unset((flags), (flag)) : Flag_Set((flags), (flag)))
+#define Get_Flag(  flags, flag) (((flags) &  (flag)) != 0)
+#define Set_Flag(  flags, flag)  ((flags) = (flags) | flag)
+#define Unset_Flag(flags, flag)  ((flags) = (flags) & ~(flag))
+#define Toggle_Flag(flags, flag)  (Get_Flag((flags), (flag)) ? Unset_Flag((flags), (flag)) : Set_Flag((flags), (flag)))
 
-#define Is_White_Turn(GameState) (Flag_Get((GameState)->Flags, Whose_Turn_Flag) == 0)
-#define Is_Black_Turn(GameState) (Flag_Get((GameState)->Flags, Whose_Turn_Flag) != 0)
+#define Is_White_Turn(GameState) (Get_Flag((GameState)->Flags, Whose_Turn_Flag) == 0)
+#define Is_Black_Turn(GameState) (Get_Flag((GameState)->Flags, Whose_Turn_Flag) != 0)
 
-#define White_To_Move(GameState) Flag_Unset(GameState->Flags, Whose_Turn_Flag)
-#define Black_To_Move(GameState) Flag_Set(GameState->Flags, Whose_Turn_Flag)
+#define White_To_Move(GameState) Unset_Flag(GameState->Flags, Whose_Turn_Flag)
+#define Black_To_Move(GameState) Set_Flag(GameState->Flags, Whose_Turn_Flag)
 
 typedef enum
 {
@@ -332,7 +332,9 @@ typedef enum
     Black_King_Side_Castle_Flag  = (1 << 4),
 
     White_In_Check_Flag          = (1 << 5),
-    Black_In_Check_Flag          = (1 << 6)
+    Black_In_Check_Flag          = (1 << 6),
+
+    Game_Over_Flag               = (1 << 7)
 } game_state_flag;
 
 typedef struct
@@ -498,7 +500,7 @@ internal b32 WhiteCanQueenSideCastle(app_state *AppState, game_state *GameState)
 {
     b32 KingInOriginalPosition = GameState->Piece[piece_White_King] == E1;
     b32 RookInOriginalPosition = GameState->Piece[piece_White_Queen_Rook] == A1;
-    b32 QueenSideCastleFlag = Flag_Get(GameState->Flags, White_Queen_Side_Castle_Flag);
+    b32 QueenSideCastleFlag = Get_Flag(GameState->Flags, White_Queen_Side_Castle_Flag);
     b32 B1Open = !Is_Valid_Piece(AppState->Squares[B1]);
     b32 C1Open = !Is_Valid_Piece(AppState->Squares[C1]);
     b32 D1Open = !Is_Valid_Piece(AppState->Squares[D1]);
@@ -513,7 +515,7 @@ internal b32 WhiteCanKingSideCastle(app_state *AppState, game_state *GameState)
 {
     b32 KingInOriginalPosition = GameState->Piece[piece_White_King] == E1;
     b32 RookInOriginalPosition = GameState->Piece[piece_White_King_Rook] == H1;
-    b32 KingSideCastleFlag = Flag_Get(GameState->Flags, White_King_Side_Castle_Flag);
+    b32 KingSideCastleFlag = Get_Flag(GameState->Flags, White_King_Side_Castle_Flag);
     b32 F1Open = !Is_Valid_Piece(AppState->Squares[F1]);
     b32 G1Open = !Is_Valid_Piece(AppState->Squares[G1]);
 
@@ -527,7 +529,7 @@ internal b32 BlackCanQueenSideCastle(app_state *AppState, game_state *GameState)
 {
     b32 KingInOriginalPosition = GameState->Piece[piece_Black_King] == E8;
     b32 RookInOriginalPosition = GameState->Piece[piece_Black_Queen_Rook] == A8;
-    b32 QueenSideCastleFlag = Flag_Get(GameState->Flags, Black_Queen_Side_Castle_Flag);
+    b32 QueenSideCastleFlag = Get_Flag(GameState->Flags, Black_Queen_Side_Castle_Flag);
     b32 B8Open = !Is_Valid_Piece(AppState->Squares[B8]);
     b32 C8Open = !Is_Valid_Piece(AppState->Squares[C8]);
     b32 D8Open = !Is_Valid_Piece(AppState->Squares[D8]);
@@ -542,7 +544,7 @@ internal b32 BlackCanKingSideCastle(app_state *AppState, game_state *GameState)
 {
     b32 KingInOriginalPosition = GameState->Piece[piece_Black_King] == E8;
     b32 RookInOriginalPosition = GameState->Piece[piece_Black_King_Rook] == H8;
-    b32 KingSideCastleFlag = Flag_Get(GameState->Flags, Black_King_Side_Castle_Flag);
+    b32 KingSideCastleFlag = Get_Flag(GameState->Flags, Black_King_Side_Castle_Flag);
     b32 F8Open = !Is_Valid_Piece(AppState->Squares[F8]);
     b32 G8Open = !Is_Valid_Piece(AppState->Squares[G8]);
 
@@ -700,7 +702,7 @@ internal game_tree *CreateGameTree(app_state *AppState)
     }
     else
     {
-        Flag_Set(AppState->Flags, app_state_flags_GameTreeNodePoolIsFull);
+        Set_Flag(AppState->Flags, app_state_flags_GameTreeNodePoolIsFull);
     }
 
     return NewGameTree;
@@ -731,6 +733,7 @@ internal void Debug_CheckThatTreeDoesNotContainNode(app_state *AppState, game_tr
         else
         {
             CurrentNode = CurrentNode->Parent;
+            AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
         }
 
         Assert(CurrentNode != TestNode);
@@ -884,34 +887,34 @@ internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
     {
     case piece_White_Queen_Rook:
     {
-        Flag_Unset(GameState->Flags, White_Queen_Side_Castle_Flag);
+        Unset_Flag(GameState->Flags, White_Queen_Side_Castle_Flag);
     } break;
     case piece_Black_Queen_Rook:
     {
-        Flag_Unset(GameState->Flags, Black_Queen_Side_Castle_Flag);
+        Unset_Flag(GameState->Flags, Black_Queen_Side_Castle_Flag);
     } break;
     case piece_White_King_Rook:
     {
-        Flag_Unset(GameState->Flags, White_King_Side_Castle_Flag);
+        Unset_Flag(GameState->Flags, White_King_Side_Castle_Flag);
     } break;
     case piece_Black_King_Rook:
     {
-        Flag_Unset(GameState->Flags, Black_King_Side_Castle_Flag);
+        Unset_Flag(GameState->Flags, Black_King_Side_Castle_Flag);
     } break;
     case piece_White_King:
     {
-        Flag_Unset(GameState->Flags, White_Queen_Side_Castle_Flag);
-        Flag_Unset(GameState->Flags, White_King_Side_Castle_Flag);
+        Unset_Flag(GameState->Flags, White_Queen_Side_Castle_Flag);
+        Unset_Flag(GameState->Flags, White_King_Side_Castle_Flag);
     } break;
     case piece_Black_King:
     {
-        Flag_Unset(GameState->Flags, Black_Queen_Side_Castle_Flag);
-        Flag_Unset(GameState->Flags, Black_King_Side_Castle_Flag);
+        Unset_Flag(GameState->Flags, Black_Queen_Side_Castle_Flag);
+        Unset_Flag(GameState->Flags, Black_King_Side_Castle_Flag);
     } break;
     default: break;
     }
 
-    Flag_Toggle(GameState->Flags, Whose_Turn_Flag);
+    Toggle_Flag(GameState->Flags, Whose_Turn_Flag);
     GameState->LastMove = Move;
 }
 
@@ -1101,7 +1104,7 @@ internal b32 CheckIfKingIsInCheck(app_state *AppState, game_state *GameState, pi
     if (IsInCheck)
     {
         u32 CheckFlag = KingPiece == piece_White_King ? White_In_Check_Flag : Black_In_Check_Flag;
-        Flag_Set(GameState->Flags, CheckFlag);
+        Set_Flag(GameState->Flags, CheckFlag);
     }
 
     return IsInCheck;
@@ -1132,7 +1135,9 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
     MakeMove(AppState, &NewGameState, Move);
 
     /* NOTE: @Copypasta HandleMove */
-    Flag_Unset(NewGameState.Flags, White_In_Check_Flag | Black_In_Check_Flag);
+    b32 WhiteWasInCheck = Get_Flag(NewGameState.Flags, White_In_Check_Flag);
+    b32 BlackWasInCheck = Get_Flag(NewGameState.Flags, Black_In_Check_Flag);
+    Unset_Flag(NewGameState.Flags, White_In_Check_Flag | Black_In_Check_Flag);
     b32 WhiteIsInCheck = CheckIfKingIsInCheck(AppState, &NewGameState, piece_White_King);
     b32 BlackIsInCheck = CheckIfKingIsInCheck(AppState, &NewGameState, piece_Black_King);
 
@@ -1150,6 +1155,11 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
     {
         /* NOTE: Don't allow moving into check by zeroing out the GameTree... */
         GameTree = 0;
+
+        if (WhiteWasInCheck || BlackWasInCheck)
+        {
+            Set_Flag(GameState->Flags, Game_Over_Flag);
+        }
     }
     else
     {
@@ -1441,7 +1451,7 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
 
     for (s32 I = Start; I < End; ++I)
     {
-        if (Flag_Get(AppState->Flags, app_state_flags_GameTreeNodePoolIsFull))
+        if (Get_Flag(AppState->Flags, app_state_flags_GameTreeNodePoolIsFull))
         {
             /* NOTE: We check here if we have run out of nodes, becuase it is easier,
                but this means we sometimes try to call AddPotential mutliple times
@@ -1517,13 +1527,24 @@ internal void GenerateAllPotentials(app_state *AppState)
             AppState->GameTreeCurrent = CurrentNode;
             InitializeSquares(AppState->Squares, &AppState->GameTreeCurrent->State);
             GeneratePotentials(AppState, &AppState->GameTreeCurrent->State);
+
+            if (CurrentNode->FirstChild == 0)
+            {
+                /* NOTE: We tried to generate potentials, but the node still does not have children.
+                   We could not find any new moves, which means we found a checkmate.
+                   Move on to the next sibling here...
+                */
+                CurrentNode = CurrentNode->NextSibling;
+            }
         }
         else if (CurrentNode->NextSibling != 0)
         {
+            Assert(CurrentNode != CurrentNode->NextSibling);
             CurrentNode = CurrentNode->NextSibling;
         }
         else
         {
+            Assert(CurrentNode != CurrentNode->FirstChild);
             CurrentNode = CurrentNode->FirstChild;
         }
 
@@ -1539,10 +1560,10 @@ internal void GenerateAllPotentials(app_state *AppState)
 internal void InitializeGameState(game_state *GameState)
 {
     GameState->Flags = 0;
-    Flag_Set(GameState->Flags, White_Queen_Side_Castle_Flag);
-    Flag_Set(GameState->Flags, White_King_Side_Castle_Flag);
-    Flag_Set(GameState->Flags, Black_Queen_Side_Castle_Flag);
-    Flag_Set(GameState->Flags, Black_King_Side_Castle_Flag);
+    Set_Flag(GameState->Flags, White_Queen_Side_Castle_Flag);
+    Set_Flag(GameState->Flags, White_King_Side_Castle_Flag);
+    Set_Flag(GameState->Flags, Black_Queen_Side_Castle_Flag);
+    Set_Flag(GameState->Flags, Black_King_Side_Castle_Flag);
 
     for (s32 I = 0; I < 2; ++I)
     {
@@ -1581,7 +1602,7 @@ internal void SetupForTesting(app_state *AppState, game_state *GameState)
     White_To_Move(GameState);
     DebugMovePiece(AppState, GameState, piece_White_Pawn_E, E4);
 
-    GameState->Flags = Flag_Set(GameState->Flags, Whose_Turn_Flag);
+    GameState->Flags = Set_Flag(GameState->Flags, Whose_Turn_Flag);
 #elif 0
     /* NOTE: Test castling for white. */
     White_To_Move(GameState);
@@ -1600,7 +1621,7 @@ internal void SetupForTesting(app_state *AppState, game_state *GameState)
     DebugMovePiece(AppState, GameState, piece_White_King_Bishop, F6);
 
     White_To_Move(GameState);
-#elif 1
+#elif 0
     /* NOTE: Test castling for black */
     Black_To_Move(GameState);
     DebugMovePiece(AppState, GameState, piece_Black_Queen_Knight, E5);
@@ -1618,10 +1639,16 @@ internal void SetupForTesting(app_state *AppState, game_state *GameState)
     DebugMovePiece(AppState, GameState, piece_Black_King_Bishop, F6);
 
     Black_To_Move(GameState);
-#else
+#elif 0
     /* NOTE: Test un-passant for white. */
-    DebugMovePiece(AppState, GameState, piece_White_Pawn_E, E6);
+    DebugMovePiece(AppState, GameState, piece_White_Pawn_E, E5);
     DebugMovePiece(AppState, GameState, piece_Black_Pawn_D, D5);
+#else
+    /* DebugMovePiece(AppState, GameState, piece_White_Pawn_E, E4); */
+    /* DebugMovePiece(AppState, GameState, piece_Black_Pawn_E, E5); */
+    /* DebugMovePiece(AppState, GameState, piece_White_King_Bishop, C4); */
+    /* DebugMovePiece(AppState, GameState, piece_Black_Queen_Knight, C6); */
+    /* DebugMovePiece(AppState, GameState, piece_White_Queen, F3); */
 #endif
 }
 
@@ -1764,7 +1791,8 @@ internal void HandleMove(app_state *AppState)
     int HasSelectedSquare = SelectedSquare.X >= 0 && SelectedSquare.Y >= 0;
     int HasMoveSquare = Ui->MoveSquare.X >= 0 && Ui->MoveSquare.Y >= 0;
 
-    if (AppState->GameTreeCurrent && HasSelectedSquare && HasMoveSquare)
+    if (!Get_Flag(AppState->GameTreeCurrent->State.Flags, Game_Over_Flag) &&
+        AppState->GameTreeCurrent && HasSelectedSquare && HasMoveSquare)
     {
         game_state TempGameState;
         CopyGameState(&AppState->GameTreeCurrent->State, &TempGameState);
@@ -1784,7 +1812,7 @@ internal void HandleMove(app_state *AppState)
         if (Is_Valid_Square(Move.BeginSquare) && Is_Valid_Square(Move.EndSquare) && MoveSquaresAreDifferent)
         {
             /* @CopyPasta */
-            b32 IsWhiteTurn = Flag_Get(TempGameState.Flags, Whose_Turn_Flag) == 0;
+            b32 IsWhiteTurn = Get_Flag(TempGameState.Flags, Whose_Turn_Flag) == 0;
             b32 IsWhitePiece = Is_White_Piece(Move.Piece);
             b32 IsMoveablePiece = (IsWhitePiece && IsWhiteTurn) || !(IsWhitePiece || IsWhiteTurn);
 
@@ -1837,7 +1865,9 @@ internal void HandleMove(app_state *AppState)
                 MakeMove(AppState, &TempGameState, Move);
 
                 /* NOTE: @Copypasta AddPotential */
-                Flag_Unset(TempGameState.Flags, White_In_Check_Flag | Black_In_Check_Flag);
+                b32 WhiteWasInCheck = Get_Flag(TempGameState.Flags, White_In_Check_Flag);
+                b32 BlackWasInCheck = Get_Flag(TempGameState.Flags, Black_In_Check_Flag);
+                Unset_Flag(TempGameState.Flags, White_In_Check_Flag | Black_In_Check_Flag);
                 b32 WhiteIsInCheck = CheckIfKingIsInCheck(AppState, &TempGameState, piece_White_King);
                 b32 BlackIsInCheck = CheckIfKingIsInCheck(AppState, &TempGameState, piece_Black_King);
 
@@ -1852,6 +1882,11 @@ internal void HandleMove(app_state *AppState)
 
                 while (Sibling)
                 {
+                    if ((WhiteWasInCheck && WhiteIsInCheck) || (BlackWasInCheck && BlackIsInCheck))
+                    {
+                        Set_Flag(TempGameState.Flags, Game_Over_Flag);
+                    }
+
                     b32 AreEqual = CheckIfGameStatesAreEqual(&TempGameState, &Sibling->State);
 
                     if (AreEqual)
@@ -1950,21 +1985,30 @@ internal void DrawBoard(app_state *AppState)
         DrawText(Buff, 4.0f, 4.0f, 16.0f, Color);
     }
 
-    { /* NOTE: Debug display if a player is in check. */
-        b32 WhiteIsInCheck = Flag_Get(CurrentState.Flags, White_In_Check_Flag);
-        b32 BlackIsInCheck = Flag_Get(CurrentState.Flags, Black_In_Check_Flag);
-        if (WhiteIsInCheck && BlackIsInCheck)
+    { /* NOTE: Debug display if a player is in check/mate. */
+        if (Get_Flag(CurrentState.Flags, Game_Over_Flag))
         {
-            Debug_PrintPieces(&CurrentState);
+            b32 IsWhiteTurn = Is_White_Turn(&CurrentState);
+            char *Message = IsWhiteTurn ? "Black Wins!" : "White Wins!";
+            DrawText(Message, 8, 20, 18, (Color){180,20,20,255});
         }
-        Assert(!(WhiteIsInCheck && BlackIsInCheck));
-
-        if (WhiteIsInCheck || BlackIsInCheck)
+        else
         {
-            char Buff[256];
-            char *FormatString = WhiteIsInCheck ? "White in check %d" : "Black in check %d";
-            sprintf(Buff, FormatString, CurrentState.DebugCheckPiece);
-            DrawText(Buff, 8, 24, 18, (Color){180,20,20,255});
+            b32 WhiteIsInCheck = Get_Flag(CurrentState.Flags, White_In_Check_Flag);
+            b32 BlackIsInCheck = Get_Flag(CurrentState.Flags, Black_In_Check_Flag);
+            if (WhiteIsInCheck && BlackIsInCheck)
+            {
+                Debug_PrintPieces(&CurrentState);
+            }
+            Assert(!(WhiteIsInCheck && BlackIsInCheck));
+
+            if (WhiteIsInCheck || BlackIsInCheck)
+            {
+                char Buff[256];
+                char *FormatString = WhiteIsInCheck ? "White in check %d" : "Black in check %d";
+                sprintf(Buff, FormatString, CurrentState.DebugCheckPiece);
+                DrawText(Buff, 8, 20, 18, (Color){180,20,20,255});
+            }
         }
     }
 
