@@ -1,6 +1,6 @@
 /*
     BUGS:
-        TODO: The user cannot input a move that results in checkmate, this is likely due to not properly handling the game-over flag when comparing game states in HandleMove.
+        TODO: The engine sets all check states as checkmate states, which is not good.
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
@@ -12,6 +12,9 @@
 
     Dev Features:
         TODO: Should we create an iterator for game_trees?
+
+    Code Quality:
+        TODO: AddPotential and HandleMove have a lot of similarities and have been a source of implementation pains. Maybe we should put these two functions side-by-side and see if they can be combined.
 */
 #include <stdio.h>
 #include <stdint.h>
@@ -385,6 +388,7 @@ typedef struct
 typedef enum
 {
     app_state_flags_GameTreeNodePoolIsFull,
+    app_state_flags_IsBotPlayingAsWhite,
     app_state_flags_Count,
 } app_state_flags;
 
@@ -426,6 +430,9 @@ typedef struct
     evaluation Evaluation;
 
     u32 Flags;
+
+    s32 BotTicksPerMove;
+    s32 BotMoveTick;
 } app_state;
 
 #define Has_Free_Game_Tree(AppState)                                 \
@@ -766,6 +773,11 @@ internal void SpliceGameTree(game_tree *GameTree)
 
 internal void MakeGameTreeTheRoot(app_state *AppState, game_tree *NewRoot)
 {
+    if (NewRoot == 0)
+    {
+        return;
+    }
+
     SpliceGameTree(NewRoot);
 
     game_tree *NewFreeTree = AppState->GameTreeRoot.FirstChild;
@@ -920,7 +932,8 @@ internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
 
 internal b32 CheckIfGameStatesAreEqual(game_state *StateA, game_state *StateB)
 {
-    b32 FlagsAreEqual = StateA->Flags == StateB->Flags;
+    /* TODO: It's a pain to check if the flags are equal, but we should _REALLY_ check if the flags are equal... */
+    /* b32 FlagsAreEqual = StateA->Flags == StateB->Flags; */
     b32 PiecesMatch = 1;
     /* TODO: Do we care if the LastMove is the same? Maybe for en-passant? */
     /* move LastMove; */
@@ -934,7 +947,7 @@ internal b32 CheckIfGameStatesAreEqual(game_state *StateA, game_state *StateB)
         }
     }
 
-    b32 GameStatesAreEqual = FlagsAreEqual && PiecesMatch;
+    b32 GameStatesAreEqual = PiecesMatch;//FlagsAreEqual && PiecesMatch;
 
     return GameStatesAreEqual;
 }
@@ -1782,6 +1795,20 @@ internal void Debug_PrintBoard(app_state *AppState)
     printf("\n");
 }
 
+internal void LetTheBotMakeAMove(app_state *AppState)
+{
+    game_tree *TheBotsChosenGameState = AppState->GameTreeCurrent->FirstChild;
+    if (AppState->BotMoveTick >= AppState->BotTicksPerMove)
+    {
+        MakeGameTreeTheRoot(AppState, TheBotsChosenGameState);
+        AppState->BotMoveTick = 0;
+    }
+    else
+    {
+        ++AppState->BotMoveTick;
+    }
+}
+
 internal void HandleMove(app_state *AppState)
 {
     ui *Ui = &AppState->Ui;
@@ -1882,11 +1909,6 @@ internal void HandleMove(app_state *AppState)
 
                 while (Sibling)
                 {
-                    if ((WhiteWasInCheck && WhiteIsInCheck) || (BlackWasInCheck && BlackIsInCheck))
-                    {
-                        Set_Flag(TempGameState.Flags, Game_Over_Flag);
-                    }
-
                     b32 AreEqual = CheckIfGameStatesAreEqual(&TempGameState, &Sibling->State);
 
                     if (AreEqual)
@@ -2410,6 +2432,7 @@ int main(void)
     InitializeGameState(&AppState.GameTreeRoot.State);
     InitializeSquares(AppState.Squares, &AppState.GameTreeRoot.State);
     InitializeEvaluation(&AppState);
+    AppState.BotTicksPerMove = 48;
 
 #if 0
     SetupForTesting(&AppState, &AppState.GameTreeRoot.State);
@@ -2437,9 +2460,20 @@ int main(void)
     {
         ryn_BeginProfile();
 
+        /* TODO: @CodeQuality The logic to determine if it's the bot's turn is confusing. This could probably be phrased in a much better way. */
+        b32 IsTheBotsTurn = (Get_Flag(AppState.GameTreeCurrent->State.Flags, Whose_Turn_Flag) !=
+                             Get_Flag(AppState.Flags, app_state_flags_IsBotPlayingAsWhite));
+
         ryn_BEGIN_TIMED_BLOCK(timed_block_HandleInputAndMove);
         HandleUserInput(&AppState);
-        HandleMove(&AppState);
+        if (IsTheBotsTurn)
+        {
+            LetTheBotMakeAMove(&AppState);
+        }
+        else
+        {
+            HandleMove(&AppState);
+        }
         ryn_END_TIMED_BLOCK(timed_block_HandleInputAndMove);
 
         ryn_BEGIN_TIMED_BLOCK(timed_block_BeginAndClear);
