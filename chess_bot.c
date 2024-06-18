@@ -49,7 +49,7 @@ typedef enum
 
 const s32 SCREEN_WIDTH = 960;
 const s32 SCREEN_HEIGHT = 540;
-const s32 TARGET_FPS = 30;
+const s32 TARGET_FPS = 60;
 
 #define BOARD_SIZE 8
 #define BOARD_PADDING 40
