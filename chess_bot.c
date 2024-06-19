@@ -782,7 +782,7 @@ internal void MakeGameTreeTheRoot(app_state *AppState, game_tree *NewRoot)
 
     game_tree *NewFreeTree = AppState->GameTreeRoot.FirstChild;
 
-    if (NewFreeTree->Parent)
+    if (NewFreeTree != 0 && NewFreeTree->Parent)
     {
         Assert(NewFreeTree->Parent->FirstChild == NewFreeTree);
         NewFreeTree->Parent->FirstChild = 0;
@@ -2226,7 +2226,19 @@ internal void IncrementallySortGameTree(app_state *AppState)
             f32 PreviousScore = SwapNode->PreviousSibling->Score;
             f32 CurrentScore = SwapNode->Score;
 
-            if (CurrentScore > PreviousScore)
+            b32 BotIsWhite = Get_Flag(AppState->Flags, app_state_flags_IsBotPlayingAsWhite);
+
+            b32 ShouldActuallySwap;
+            if (BotIsWhite)
+            {
+                ShouldActuallySwap = CurrentScore > PreviousScore;
+            }
+            else
+            {
+                ShouldActuallySwap = PreviousScore > CurrentScore;
+            }
+
+            if (ShouldActuallySwap)
             {
                 SwapGameTreeSiblings(SwapNode->PreviousSibling, SwapNode);
             }
