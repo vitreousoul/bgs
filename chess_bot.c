@@ -3,9 +3,10 @@
         TODO: The engine sets all check states as checkmate states, which is not good.
 
     Engine Functionality:
+        TODO: Disallow moving a king through check.
+        TODO: Handle pawn promotion.
         TODO: Create game_state valuing functions.
         TODO: Evaluate the ChildScoreAverage value for a game_tree's list of children.
-        TODO: Have the engine automatically pick the highest rated move.
 
     GUI:
         ...
@@ -502,61 +503,83 @@ internal void CopyGameState(game_state *Source, game_state *Destination)
     }
 }
 
-/* TODO: Compress these castling functions... */
-internal b32 WhiteCanQueenSideCastle(app_state *AppState, game_state *GameState)
+internal b32 CanCastle(app_state *AppState, game_state *GameState, b32 QueenSideCastle)
 {
-    b32 KingInOriginalPosition = GameState->Piece[piece_White_King] == E1;
-    b32 RookInOriginalPosition = GameState->Piece[piece_White_Queen_Rook] == A1;
-    b32 QueenSideCastleFlag = Get_Flag(GameState->Flags, White_Queen_Side_Castle_Flag);
-    b32 B1Open = !Is_Valid_Piece(AppState->Squares[B1]);
-    b32 C1Open = !Is_Valid_Piece(AppState->Squares[C1]);
-    b32 D1Open = !Is_Valid_Piece(AppState->Squares[D1]);
+    b32 IsWhiteTurn = Is_White_Turn(GameState);
+
+    u8 KingSquare, RookSquare, FirstSquare, SecondSquare, ThirdSquare;
+    b32 CastleFlag;
+    piece KingPiece, RookPiece;
+
+    if (IsWhiteTurn)
+    {
+        if (QueenSideCastle)
+        {
+            KingSquare = E1;
+            RookSquare = A1;
+            FirstSquare = B1;
+            SecondSquare = C1;
+            ThirdSquare = D1;
+
+            CastleFlag = White_Queen_Side_Castle_Flag;
+            KingPiece = piece_White_King;
+            RookPiece = piece_White_Queen_Rook;
+        }
+        else
+        {
+            KingSquare = E1;
+            RookSquare = H1;
+            FirstSquare = F1;
+            SecondSquare = G1;
+            ThirdSquare = 255;
+
+            CastleFlag = White_King_Side_Castle_Flag;
+            KingPiece = piece_White_King;
+            RookPiece = piece_White_King_Rook;
+        }
+    }
+    else
+    {
+        if (QueenSideCastle)
+        {
+            KingSquare = E8;
+            RookSquare = A8;
+            FirstSquare = B8;
+            SecondSquare = C8;
+            ThirdSquare = D8;
+
+            CastleFlag = Black_Queen_Side_Castle_Flag;
+            KingPiece = piece_Black_King;
+            RookPiece = piece_Black_Queen_Rook;
+        }
+        else
+        {
+            KingSquare = E8;
+            RookSquare = H8;
+            FirstSquare = F8;
+            SecondSquare = G8;
+            ThirdSquare = 255;
+
+            CastleFlag = Black_King_Side_Castle_Flag;
+            KingPiece = piece_Black_King;
+            RookPiece = piece_Black_King_Rook;
+        }
+    }
+
+    /* TODO: Check if the king is in check while "passing through" the open squares.
+       We shouldn't need to check the last open square, since that gets checked during
+       regular movement code, right?
+    */
+
+    b32 KingInOriginalPosition = GameState->Piece[KingPiece] == KingSquare;
+    b32 RookInOriginalPosition = GameState->Piece[RookPiece] == RookSquare;
+    b32 QueenSideCastleFlag = Get_Flag(GameState->Flags, CastleFlag);
+    b32 FirstOpen = !Is_Valid_Piece(AppState->Squares[FirstSquare]);
+    b32 SecondOpen = !Is_Valid_Piece(AppState->Squares[SecondSquare]);
+    b32 ThirdOpen = ThirdSquare == 255 || !Is_Valid_Piece(AppState->Squares[ThirdSquare]);
 
     b32 CanCastle = (KingInOriginalPosition && RookInOriginalPosition &&
-                     QueenSideCastleFlag && B1Open && C1Open && D1Open);
-
-    return CanCastle;
-}
-
-internal b32 WhiteCanKingSideCastle(app_state *AppState, game_state *GameState)
-{
-    b32 KingInOriginalPosition = GameState->Piece[piece_White_King] == E1;
-    b32 RookInOriginalPosition = GameState->Piece[piece_White_King_Rook] == H1;
-    b32 KingSideCastleFlag = Get_Flag(GameState->Flags, White_King_Side_Castle_Flag);
-    b32 F1Open = !Is_Valid_Piece(AppState->Squares[F1]);
-    b32 G1Open = !Is_Valid_Piece(AppState->Squares[G1]);
-
-    b32 CanCastle = (KingInOriginalPosition && RookInOriginalPosition &&
-                     KingSideCastleFlag && F1Open && G1Open);
-
-    return CanCastle;
-}
-
-internal b32 BlackCanQueenSideCastle(app_state *AppState, game_state *GameState)
-{
-    b32 KingInOriginalPosition = GameState->Piece[piece_Black_King] == E8;
-    b32 RookInOriginalPosition = GameState->Piece[piece_Black_Queen_Rook] == A8;
-    b32 QueenSideCastleFlag = Get_Flag(GameState->Flags, Black_Queen_Side_Castle_Flag);
-    b32 B8Open = !Is_Valid_Piece(AppState->Squares[B8]);
-    b32 C8Open = !Is_Valid_Piece(AppState->Squares[C8]);
-    b32 D8Open = !Is_Valid_Piece(AppState->Squares[D8]);
-
-    b32 CanCastle = (KingInOriginalPosition && RookInOriginalPosition &&
-                     QueenSideCastleFlag && B8Open && C8Open && D8Open);
-
-    return CanCastle;
-}
-
-internal b32 BlackCanKingSideCastle(app_state *AppState, game_state *GameState)
-{
-    b32 KingInOriginalPosition = GameState->Piece[piece_Black_King] == E8;
-    b32 RookInOriginalPosition = GameState->Piece[piece_Black_King_Rook] == H8;
-    b32 KingSideCastleFlag = Get_Flag(GameState->Flags, Black_King_Side_Castle_Flag);
-    b32 F8Open = !Is_Valid_Piece(AppState->Squares[F8]);
-    b32 G8Open = !Is_Valid_Piece(AppState->Squares[G8]);
-
-    b32 CanCastle = (KingInOriginalPosition && RookInOriginalPosition &&
-                     KingSideCastleFlag && F8Open && G8Open);
+                     QueenSideCastleFlag && FirstOpen && SecondOpen && ThirdOpen);
 
     return CanCastle;
 }
@@ -1418,28 +1441,14 @@ internal void LookKnight(app_state *AppState, game_state *GameState, piece Piece
 
 internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece)
 {
-    if (Is_White_Turn(GameState))
+    if (CanCastle(AppState, GameState, 1))
     {
-        if (WhiteCanQueenSideCastle(AppState, GameState))
-        {
-            AddPotential(AppState, GameState, Piece, 255, move_type_QueenCastle);
-        }
-        else if (WhiteCanKingSideCastle(AppState, GameState))
-        {
-            AddPotential(AppState, GameState, Piece, 255, move_type_KingCastle);
-        }
-
+        AddPotential(AppState, GameState, Piece, 255, move_type_QueenCastle);
     }
-    else if (Is_Black_Turn(GameState))
+
+    if (CanCastle(AppState, GameState, 0))
     {
-        if (BlackCanQueenSideCastle(AppState, GameState))
-        {
-            AddPotential(AppState, GameState, Piece, 255, move_type_QueenCastle);
-        }
-        else if (BlackCanKingSideCastle(AppState, GameState))
-        {
-            AddPotential(AppState, GameState, Piece, 255, move_type_KingCastle);
-        }
+        AddPotential(AppState, GameState, Piece, 255, move_type_KingCastle);
     }
 }
 
@@ -1864,25 +1873,25 @@ internal void HandleMove(app_state *AppState)
 
                 if (Move.Piece == piece_White_King &&
                     Move.EndSquare == C1 &&
-                    WhiteCanQueenSideCastle(AppState, &TempGameState))
+                    CanCastle(AppState, &TempGameState, 1))
                 {
                     Move.Type = move_type_QueenCastle;
                 }
                 else if (Move.Piece == piece_White_King &&
                          Move.EndSquare == G1 &&
-                         WhiteCanKingSideCastle(AppState, &TempGameState))
+                         CanCastle(AppState, &TempGameState, 0))
                 {
                     Move.Type = move_type_KingCastle;
                 }
                 else if (Move.Piece == piece_Black_King &&
                     Move.EndSquare == C8 &&
-                    BlackCanQueenSideCastle(AppState, &TempGameState))
+                    CanCastle(AppState, &TempGameState, 1))
                 {
                     Move.Type = move_type_QueenCastle;
                 }
                 else if (Move.Piece == piece_Black_King &&
                          Move.EndSquare == G8 &&
-                         BlackCanKingSideCastle(AppState, &TempGameState))
+                         CanCastle(AppState, &TempGameState, 0))
                 {
                     Move.Type = move_type_KingCastle;
                 }
