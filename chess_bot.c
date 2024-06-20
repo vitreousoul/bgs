@@ -503,6 +503,257 @@ internal void CopyGameState(game_state *Source, game_state *Destination)
     }
 }
 
+internal void RemovePiece(app_state *AppState, game_state *GameState, piece Piece)
+{
+    AppState->Squares[GameState->Piece[Piece]] = piece_Null;
+    GameState->Piece[Piece] = square_Null;
+}
+
+internal void MovePieceToSquare(app_state *AppState, game_state *GameState, piece Piece, square Square)
+{
+    piece MaybeCapturedPiece = AppState->Squares[Square];
+
+    /* NOTE: Capture. */
+    if (Is_Valid_Piece(MaybeCapturedPiece))
+    {
+        GameState->Piece[MaybeCapturedPiece] = square_Null;
+    }
+
+    AppState->Squares[GameState->Piece[Piece]] = piece_Null;
+    GameState->Piece[Piece] = Square;
+    AppState->Squares[Square] = Piece;
+}
+
+internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
+{
+    piece Piece = Move.Piece;
+    b32 IsWhitePiece = Is_White_Piece(Piece);
+
+    {
+        b32 IsWhiteTurn = Is_White_Turn(GameState);
+        b32 WhitePieceAndTurn = IsWhitePiece && IsWhiteTurn;
+        b32 BlackPieceAndTurn = !(IsWhitePiece || IsWhiteTurn);
+
+        if (!(WhitePieceAndTurn || BlackPieceAndTurn))
+        {
+            return;
+        }
+    }
+
+    switch (Move.Type)
+    {
+    case move_type_EnPassant:
+    {
+        RemovePiece(AppState, GameState, GameState->LastMove.Piece);
+    } /* Fall through */
+    case move_type_Move:
+    {
+        MovePieceToSquare(AppState, GameState, Piece, Move.EndSquare);
+    } break;
+    case move_type_QueenCastle:
+    {
+        if (IsWhitePiece)
+        {
+            MovePieceToSquare(AppState, GameState, piece_White_Queen_Rook, D1);
+            MovePieceToSquare(AppState, GameState, piece_White_King, C1);
+        }
+        else
+        {
+            MovePieceToSquare(AppState, GameState, piece_Black_Queen_Rook, D8);
+            MovePieceToSquare(AppState, GameState, piece_Black_King, C8);
+        }
+    } break;
+    case move_type_KingCastle:
+    {
+        if (IsWhitePiece)
+        {
+            MovePieceToSquare(AppState, GameState, piece_White_King_Rook, F1);
+            MovePieceToSquare(AppState, GameState, piece_White_King, G1);
+        }
+        else
+        {
+            MovePieceToSquare(AppState, GameState, piece_Black_King_Rook, F8);
+            MovePieceToSquare(AppState, GameState, piece_Black_King, G8);
+        }
+    } break;
+    default:
+    {
+        Assert(!"Unknown move type");
+    }
+    }
+
+    switch (Piece)
+    {
+    case piece_White_Queen_Rook:
+    {
+        Unset_Flag(GameState->Flags, White_Queen_Side_Castle_Flag);
+    } break;
+    case piece_Black_Queen_Rook:
+    {
+        Unset_Flag(GameState->Flags, Black_Queen_Side_Castle_Flag);
+    } break;
+    case piece_White_King_Rook:
+    {
+        Unset_Flag(GameState->Flags, White_King_Side_Castle_Flag);
+    } break;
+    case piece_Black_King_Rook:
+    {
+        Unset_Flag(GameState->Flags, Black_King_Side_Castle_Flag);
+    } break;
+    case piece_White_King:
+    {
+        Unset_Flag(GameState->Flags, White_Queen_Side_Castle_Flag);
+        Unset_Flag(GameState->Flags, White_King_Side_Castle_Flag);
+    } break;
+    case piece_Black_King:
+    {
+        Unset_Flag(GameState->Flags, Black_Queen_Side_Castle_Flag);
+        Unset_Flag(GameState->Flags, Black_King_Side_Castle_Flag);
+    } break;
+    default: break;
+    }
+
+    Toggle_Flag(GameState->Flags, Whose_Turn_Flag);
+    GameState->LastMove = Move;
+}
+
+internal b32 CheckIfKingIsInCheck(app_state *AppState, game_state *GameState, piece KingPiece)
+{
+    Assert(KingPiece == piece_White_King || KingPiece == piece_Black_King);
+    b32 IsInCheck = 0;
+
+    s8 RowColOffsets[8][2] = {
+        {-1,-1},{-1, 0},{-1, 1},
+        { 0,-1},        { 0, 1},
+        { 1,-1},{ 1, 0},{ 1, 1},
+    };
+
+    s8 KingRow = GameState->Piece[KingPiece] / 8;
+    s8 KingCol = GameState->Piece[KingPiece] % 8;
+    u32 KingPieceColor = Get_Piece_Color(KingPiece);
+
+    for (s32 I = 0; I < 8 && !IsInCheck; ++I)
+    {
+        s32 RowOffset = RowColOffsets[I][0];
+        s32 ColOffset = RowColOffsets[I][1];
+
+        for (s32 Distance = 1; Distance < 8 && !IsInCheck; ++Distance)
+        {
+            s32 TargetRow = RowOffset * Distance + KingRow;
+            s32 TargetCol = ColOffset * Distance + KingCol;
+
+            s32 Square = Get_Square_Index(TargetRow, TargetCol);
+            b32 SquareIsValid = Is_Valid_Square(Square);
+
+            if (SquareIsValid)
+            {
+                piece TargetPiece = AppState->Squares[Square];
+
+                if (Is_Valid_Piece(TargetPiece))
+                {
+                    piece_type PieceType = PieceTypeTable[TargetPiece];
+                    u8 TargetPieceColor = Get_Piece_Color(TargetPiece);
+
+                    if (KingPieceColor == TargetPieceColor)
+                    {
+                        break;
+                    }
+
+                    switch (I)
+                    {
+                    case 0: case 2: case 5: case 7:
+                    {
+                        if (PieceType == piece_type_Bishop || PieceType == piece_type_Queen)
+                        {
+                            IsInCheck = 1;
+                            GameState->DebugCheckPiece = TargetPiece;
+                        }
+                        else if (PieceType == piece_type_Pawn && Distance == 1)
+                        {
+                            b32 WhiteKingInCheck = Is_White_Piece(KingPiece) && (I == 5 || I == 7);
+                            b32 BlackKingInCheck = Is_Black_Piece(KingPiece) && (I == 0 || I == 2);
+
+                            if (WhiteKingInCheck || BlackKingInCheck)
+                            {
+                                IsInCheck = 1;
+                                GameState->DebugCheckPiece = TargetPiece;
+                            }
+                        }
+                    } break;
+                    case 1: case 3: case 4: case 6:
+                    {
+                        if (PieceType == piece_type_Rook || PieceType == piece_type_Queen)
+                        {
+                            IsInCheck = 1;
+                            GameState->DebugCheckPiece = TargetPiece;
+                        }
+                    } break;
+                    }
+
+                    break; /* NOTE: Break out of distance loop if we see any kind of piece. */
+                }
+            }
+            else
+            {
+                break; /* NOTE: Break out if we ever hit an invalid square. */
+            }
+        }
+    }
+
+    { /* NOTE: Check for knight checks... */
+        s8 KnightOffsets[8][2] = {{1,2},{2,1},{2,-1},{1,-2},{-1,-2},{-2,-1},{-2,1},{-1,2}};
+        u8 KingPieceColor = Get_Piece_Color(KingPiece);
+
+        for (s32 I = 0; I < 8; ++I)
+        {
+            s8 TargetRow = KingRow + KnightOffsets[I][0];
+            s8 TargetCol = KingCol + KnightOffsets[I][1];
+
+            if (Is_Valid_Row_Col(TargetRow, TargetCol))
+            {
+                s32 NewSquare = TargetRow * 8 + TargetCol;
+                piece TargetPiece = AppState->Squares[NewSquare];
+
+                if (Is_Valid_Square(NewSquare) &&
+                    Is_Valid_Piece(TargetPiece) &&
+                    (PieceTypeTable[TargetPiece] == piece_type_Knight) &&
+                    (Get_Piece_Color(TargetPiece) != KingPieceColor))
+                {
+                    IsInCheck = 1;
+                    GameState->DebugCheckPiece = TargetPiece;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (IsInCheck)
+    {
+        u32 CheckFlag = KingPiece == piece_White_King ? White_In_Check_Flag : Black_In_Check_Flag;
+        Set_Flag(GameState->Flags, CheckFlag);
+    }
+
+    return IsInCheck;
+}
+
+internal void InitializeSquares(square *Squares, game_state *GameState)
+{
+    for (s32 I = 0; I < 64; ++I)
+    {
+        Squares[I] = piece_Null;
+    }
+
+    for (s32 I = 0; I < piece_Count; ++I)
+    {
+        s32 Square = GameState->Piece[I];
+
+        if (Is_Valid_Square(Square))
+        {
+            Squares[Square] = I;
+        }
+    }
+}
+
 internal b32 CanCastle(app_state *AppState, game_state *GameState, b32 QueenSideCastle)
 {
     b32 IsWhiteTurn = Is_White_Turn(GameState);
@@ -566,20 +817,53 @@ internal b32 CanCastle(app_state *AppState, game_state *GameState, b32 QueenSide
         }
     }
 
-    /* TODO: Check if the king is in check while "passing through" the open squares.
-       We shouldn't need to check the last open square, since that gets checked during
-       regular movement code, right?
-    */
-
     b32 KingInOriginalPosition = GameState->Piece[KingPiece] == KingSquare;
     b32 RookInOriginalPosition = GameState->Piece[RookPiece] == RookSquare;
-    b32 QueenSideCastleFlag = Get_Flag(GameState->Flags, CastleFlag);
+    b32 CastleFlagSet = Get_Flag(GameState->Flags, CastleFlag);
     b32 FirstOpen = !Is_Valid_Piece(AppState->Squares[FirstSquare]);
     b32 SecondOpen = !Is_Valid_Piece(AppState->Squares[SecondSquare]);
     b32 ThirdOpen = ThirdSquare == 255 || !Is_Valid_Piece(AppState->Squares[ThirdSquare]);
 
-    b32 CanCastle = (KingInOriginalPosition && RookInOriginalPosition &&
-                     QueenSideCastleFlag && FirstOpen && SecondOpen && ThirdOpen);
+    b32 CanCastle = 0;
+
+    if (KingInOriginalPosition && RookInOriginalPosition &&
+        CastleFlagSet && FirstOpen && SecondOpen && ThirdOpen)
+    {
+        b32 KingPassesThroughCheck = 0;
+        game_state TempGameState;
+        move Move;
+
+        CopyGameState(GameState, &TempGameState);
+
+        Move.Type = move_type_Move;
+        Move.Piece = KingPiece;
+        Move.BeginSquare = KingSquare;
+        Move.EndSquare = FirstSquare;
+        InitializeSquares(AppState->Squares, &TempGameState);
+        MakeMove(AppState, &TempGameState, Move);
+
+        if (CheckIfKingIsInCheck(AppState, &TempGameState, KingPiece))
+        {
+            KingPassesThroughCheck = 1;
+        }
+
+        if (QueenSideCastle)
+        {
+            Move.BeginSquare = FirstSquare;
+            Move.EndSquare = SecondSquare;
+            InitializeSquares(AppState->Squares, &TempGameState);
+            MakeMove(AppState, &TempGameState, Move);
+
+            if (CheckIfKingIsInCheck(AppState, &TempGameState, KingPiece))
+            {
+                KingPassesThroughCheck = 1;
+            }
+        }
+
+        InitializeSquares(AppState->Squares, GameState);
+
+        CanCastle = !KingPassesThroughCheck;
+    }
 
     return CanCastle;
 }
@@ -839,120 +1123,6 @@ internal void MakeGameTreeTheRoot(app_state *AppState, game_tree *NewRoot)
     AppState->GameTreeCurrent = NewRoot;
 }
 
-internal void RemovePiece(app_state *AppState, game_state *GameState, piece Piece)
-{
-    AppState->Squares[GameState->Piece[Piece]] = piece_Null;
-    GameState->Piece[Piece] = square_Null;
-}
-
-internal void MovePieceToSquare(app_state *AppState, game_state *GameState, piece Piece, square Square)
-{
-    piece MaybeCapturedPiece = AppState->Squares[Square];
-
-    /* NOTE: Capture. */
-    if (Is_Valid_Piece(MaybeCapturedPiece))
-    {
-        GameState->Piece[MaybeCapturedPiece] = square_Null;
-    }
-
-    AppState->Squares[GameState->Piece[Piece]] = piece_Null;
-    GameState->Piece[Piece] = Square;
-    AppState->Squares[Square] = Piece;
-}
-
-internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
-{
-    piece Piece = Move.Piece;
-    b32 IsWhitePiece = Is_White_Piece(Piece);
-
-    {
-        b32 IsWhiteTurn = Is_White_Turn(GameState);
-        b32 WhitePieceAndTurn = IsWhitePiece && IsWhiteTurn;
-        b32 BlackPieceAndTurn = !(IsWhitePiece || IsWhiteTurn);
-
-        if (!(WhitePieceAndTurn || BlackPieceAndTurn))
-        {
-            return;
-        }
-    }
-
-    switch (Move.Type)
-    {
-    case move_type_EnPassant:
-    {
-        RemovePiece(AppState, GameState, GameState->LastMove.Piece);
-    } /* Fall through */
-    case move_type_Move:
-    {
-        MovePieceToSquare(AppState, GameState, Piece, Move.EndSquare);
-    } break;
-    case move_type_QueenCastle:
-    {
-        if (IsWhitePiece)
-        {
-            MovePieceToSquare(AppState, GameState, piece_White_Queen_Rook, D1);
-            MovePieceToSquare(AppState, GameState, piece_White_King, C1);
-        }
-        else
-        {
-            MovePieceToSquare(AppState, GameState, piece_Black_Queen_Rook, D8);
-            MovePieceToSquare(AppState, GameState, piece_Black_King, C8);
-        }
-    } break;
-    case move_type_KingCastle:
-    {
-        if (IsWhitePiece)
-        {
-            MovePieceToSquare(AppState, GameState, piece_White_King_Rook, F1);
-            MovePieceToSquare(AppState, GameState, piece_White_King, G1);
-        }
-        else
-        {
-            MovePieceToSquare(AppState, GameState, piece_Black_King_Rook, F8);
-            MovePieceToSquare(AppState, GameState, piece_Black_King, G8);
-        }
-    } break;
-    default:
-    {
-        Assert(!"Unknown move type");
-    }
-    }
-
-    switch (Piece)
-    {
-    case piece_White_Queen_Rook:
-    {
-        Unset_Flag(GameState->Flags, White_Queen_Side_Castle_Flag);
-    } break;
-    case piece_Black_Queen_Rook:
-    {
-        Unset_Flag(GameState->Flags, Black_Queen_Side_Castle_Flag);
-    } break;
-    case piece_White_King_Rook:
-    {
-        Unset_Flag(GameState->Flags, White_King_Side_Castle_Flag);
-    } break;
-    case piece_Black_King_Rook:
-    {
-        Unset_Flag(GameState->Flags, Black_King_Side_Castle_Flag);
-    } break;
-    case piece_White_King:
-    {
-        Unset_Flag(GameState->Flags, White_Queen_Side_Castle_Flag);
-        Unset_Flag(GameState->Flags, White_King_Side_Castle_Flag);
-    } break;
-    case piece_Black_King:
-    {
-        Unset_Flag(GameState->Flags, Black_Queen_Side_Castle_Flag);
-        Unset_Flag(GameState->Flags, Black_King_Side_Castle_Flag);
-    } break;
-    default: break;
-    }
-
-    Toggle_Flag(GameState->Flags, Whose_Turn_Flag);
-    GameState->LastMove = Move;
-}
-
 internal b32 CheckIfGameStatesAreEqual(game_state *StateA, game_state *StateB)
 {
     /* TODO: It's a pain to check if the flags are equal, but we should _REALLY_ check if the flags are equal... */
@@ -973,24 +1143,6 @@ internal b32 CheckIfGameStatesAreEqual(game_state *StateA, game_state *StateB)
     b32 GameStatesAreEqual = PiecesMatch;//FlagsAreEqual && PiecesMatch;
 
     return GameStatesAreEqual;
-}
-
-internal void InitializeSquares(square *Squares, game_state *GameState)
-{
-    for (s32 I = 0; I < 64; ++I)
-    {
-        Squares[I] = piece_Null;
-    }
-
-    for (s32 I = 0; I < piece_Count; ++I)
-    {
-        s32 Square = GameState->Piece[I];
-
-        if (Is_Valid_Square(Square))
-        {
-            Squares[Square] = I;
-        }
-    }
 }
 
 internal f32 GetGameStateScore(app_state *AppState, game_state *GameState)
@@ -1025,125 +1177,6 @@ internal f32 GetGameStateScore(app_state *AppState, game_state *GameState)
     Score = WhiteScore - BlackScore;
 
     return Score;
-}
-
-internal b32 CheckIfKingIsInCheck(app_state *AppState, game_state *GameState, piece KingPiece)
-{
-    Assert(KingPiece == piece_White_King || KingPiece == piece_Black_King);
-    b32 IsInCheck = 0;
-
-    s8 RowColOffsets[8][2] = {
-        {-1,-1},{-1, 0},{-1, 1},
-        { 0,-1},        { 0, 1},
-        { 1,-1},{ 1, 0},{ 1, 1},
-    };
-
-    s8 KingRow = GameState->Piece[KingPiece] / 8;
-    s8 KingCol = GameState->Piece[KingPiece] % 8;
-    u32 KingPieceColor = Get_Piece_Color(KingPiece);
-
-    for (s32 I = 0; I < 8 && !IsInCheck; ++I)
-    {
-        s32 RowOffset = RowColOffsets[I][0];
-        s32 ColOffset = RowColOffsets[I][1];
-
-        for (s32 Distance = 1; Distance < 8 && !IsInCheck; ++Distance)
-        {
-            s32 TargetRow = RowOffset * Distance + KingRow;
-            s32 TargetCol = ColOffset * Distance + KingCol;
-
-            s32 Square = Get_Square_Index(TargetRow, TargetCol);
-            b32 SquareIsValid = Is_Valid_Square(Square);
-
-            if (SquareIsValid)
-            {
-                piece TargetPiece = AppState->Squares[Square];
-
-                if (Is_Valid_Piece(TargetPiece))
-                {
-                    piece_type PieceType = PieceTypeTable[TargetPiece];
-                    u8 TargetPieceColor = Get_Piece_Color(TargetPiece);
-
-                    if (KingPieceColor == TargetPieceColor)
-                    {
-                        break;
-                    }
-
-                    switch (I)
-                    {
-                    case 0: case 2: case 5: case 7:
-                    {
-                        if (PieceType == piece_type_Bishop || PieceType == piece_type_Queen)
-                        {
-                            IsInCheck = 1;
-                            GameState->DebugCheckPiece = TargetPiece;
-                        }
-                        else if (PieceType == piece_type_Pawn && Distance == 1)
-                        {
-                            b32 WhiteKingInCheck = Is_White_Piece(KingPiece) && (I == 5 || I == 7);
-                            b32 BlackKingInCheck = Is_Black_Piece(KingPiece) && (I == 0 || I == 2);
-
-                            if (WhiteKingInCheck || BlackKingInCheck)
-                            {
-                                IsInCheck = 1;
-                                GameState->DebugCheckPiece = TargetPiece;
-                            }
-                        }
-                    } break;
-                    case 1: case 3: case 4: case 6:
-                    {
-                        if (PieceType == piece_type_Rook || PieceType == piece_type_Queen)
-                        {
-                            IsInCheck = 1;
-                            GameState->DebugCheckPiece = TargetPiece;
-                        }
-                    } break;
-                    }
-
-                    break; /* NOTE: Break out of distance loop if we see any kind of piece. */
-                }
-            }
-            else
-            {
-                break; /* NOTE: Break out if we ever hit an invalid square. */
-            }
-        }
-    }
-
-    { /* NOTE: Check for knight checks... */
-        s8 KnightOffsets[8][2] = {{1,2},{2,1},{2,-1},{1,-2},{-1,-2},{-2,-1},{-2,1},{-1,2}};
-        u8 KingPieceColor = Get_Piece_Color(KingPiece);
-
-        for (s32 I = 0; I < 8; ++I)
-        {
-            s8 TargetRow = KingRow + KnightOffsets[I][0];
-            s8 TargetCol = KingCol + KnightOffsets[I][1];
-
-            if (Is_Valid_Row_Col(TargetRow, TargetCol))
-            {
-                s32 NewSquare = TargetRow * 8 + TargetCol;
-                piece TargetPiece = AppState->Squares[NewSquare];
-
-                if (Is_Valid_Square(NewSquare) &&
-                    Is_Valid_Piece(TargetPiece) &&
-                    (PieceTypeTable[TargetPiece] == piece_type_Knight) &&
-                    (Get_Piece_Color(TargetPiece) != KingPieceColor))
-                {
-                    IsInCheck = 1;
-                    GameState->DebugCheckPiece = TargetPiece;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (IsInCheck)
-    {
-        u32 CheckFlag = KingPiece == piece_White_King ? White_In_Check_Flag : Black_In_Check_Flag;
-        Set_Flag(GameState->Flags, CheckFlag);
-    }
-
-    return IsInCheck;
 }
 
 internal void AddPotential(app_state *AppState, game_state *GameState, piece Piece, square EndSquare, move_type MoveType)
@@ -2158,6 +2191,7 @@ internal void InitializeEvaluation(app_state *AppState)
 
 internal void SwapGameTreeSiblings(game_tree *NodeA, game_tree *NodeB)
 {
+    Assert(NodeA != 0 && NodeB != 0);
     Assert(NodeA->NextSibling == NodeB);
     Assert(NodeB->PreviousSibling == NodeA);
 
