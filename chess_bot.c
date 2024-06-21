@@ -3,12 +3,12 @@
         TODO: The engine sets all check states as checkmate states, which is not good.
 
     Engine Functionality:
-        TODO: Disallow moving a king through check.
         TODO: Handle pawn promotion.
         TODO: Create game_state valuing functions.
         TODO: Evaluate the ChildScoreAverage value for a game_tree's list of children.
 
     GUI:
+        TODO: Add UI for picking pawn-promotion piece.
         ...
 
     Dev Features:
@@ -295,7 +295,7 @@ global_variable u8 PieceTypeTable[piece_Count] = {
     [piece_Black_Pawn_E]        = piece_type_Pawn,
     [piece_Black_Pawn_F]        = piece_type_Pawn,
     [piece_Black_Pawn_G]        = piece_type_Pawn,
-    [piece_Black_Pawn_H]        = piece_type_Pawn,
+    [piece_Black_Pawn_H]        = piece_type_Pawn
 };
 
 #define Get_Flag(  flags, flag) (((flags) &  (flag)) != 0)
@@ -316,6 +316,10 @@ typedef enum
     move_type_QueenCastle,
     move_type_KingCastle,
     move_type_EnPassant,
+    move_type_PromoteQueen,
+    move_type_PromoteRook,
+    move_type_PromoteBishop,
+    move_type_PromoteKnight
 } move_type;
 
 typedef struct
@@ -341,11 +345,22 @@ typedef enum
     Game_Over_Flag               = (1 << 7)
 } game_state_flag;
 
+typedef enum
+{
+    pawn_promotion_type_Null,
+    pawn_promotion_type_Queen,
+    pawn_promotion_type_Rook,
+    pawn_promotion_type_Bishop,
+    pawn_promotion_type_Knight,
+    pawn_promotion_type_Count
+} pawn_promotion_type;
+
 typedef struct
 {
     b32 Flags;
     move LastMove;
     u8 Piece[piece_Count];
+    u8 PawnPromotion[piece_Count];
 
     piece DebugCheckPiece;
 } game_state;
@@ -441,6 +456,7 @@ typedef struct
     ((AppState)->GameTreeNodePoolIndex < Game_Tree_Node_Pool_Size))
 
 #if DEBUG
+#define NotImplemented Assert(0)
 #define Assert(p) Assert_(p, __FILE__, __LINE__)
 internal void Assert_(b32 Proposition, char *FilePath, s32 LineNumber)
 {
@@ -454,6 +470,7 @@ internal void Assert_(b32 Proposition, char *FilePath, s32 LineNumber)
 }
 #else
 #define Assert(p)
+#define NotImplemented
 #endif
 
 internal Vector2 AddV2(Vector2 A, Vector2 B)
@@ -489,6 +506,7 @@ internal void ZeroGameState(game_state *State)
     for (s32 I = 0; I < piece_Count; ++I)
     {
         State->Piece[I] = 0;
+        State->PawnPromotion[I] = 0;
     }
 }
 
@@ -500,6 +518,7 @@ internal void CopyGameState(game_state *Source, game_state *Destination)
     for (s32 I = 0; I < piece_Count; ++I)
     {
         Destination->Piece[I] = Source->Piece[I];
+        Destination->PawnPromotion[I] = Source->PawnPromotion[I];
     }
 }
 
@@ -522,6 +541,22 @@ internal void MovePieceToSquare(app_state *AppState, game_state *GameState, piec
     AppState->Squares[GameState->Piece[Piece]] = piece_Null;
     GameState->Piece[Piece] = Square;
     AppState->Squares[Square] = Piece;
+}
+
+internal pawn_promotion_type GetPawnPromotionTypeFromMoveType(move_type MoveType)
+{
+    pawn_promotion_type PawnPromotionType = pawn_promotion_type_Null;
+
+    switch (MoveType)
+    {
+    case move_type_PromoteQueen:  { PawnPromotionType = pawn_promotion_type_Queen; }  break;
+    case move_type_PromoteRook:   { PawnPromotionType = pawn_promotion_type_Rook; }   break;
+    case move_type_PromoteBishop: { PawnPromotionType = pawn_promotion_type_Bishop; } break;
+    case move_type_PromoteKnight: { PawnPromotionType = pawn_promotion_type_Knight; } break;
+    default: break;
+    }
+
+    return PawnPromotionType;
 }
 
 internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
@@ -575,6 +610,14 @@ internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
             MovePieceToSquare(AppState, GameState, piece_Black_King_Rook, F8);
             MovePieceToSquare(AppState, GameState, piece_Black_King, G8);
         }
+    } break;
+    case move_type_PromoteQueen:
+    case move_type_PromoteRook:
+    case move_type_PromoteBishop:
+    case move_type_PromoteKnight:
+    {
+        MovePieceToSquare(AppState, GameState, Piece, Move.EndSquare);
+        GameState->PawnPromotion[Piece] = GetPawnPromotionTypeFromMoveType(Move.Type);
     } break;
     default:
     {
@@ -1156,6 +1199,22 @@ internal f32 GetGameStateScore(app_state *AppState, game_state *GameState)
     {
         square Square = GameState->Piece[I];
         u8 PieceType = PieceTypeTable[I];
+        piece Piece = I;
+
+        /* @CopyPasta GeneratePotentials */
+        if (PieceType == piece_type_Pawn)
+        {
+            pawn_promotion_type PromotionType = GameState->PawnPromotion[Piece];
+
+            switch (PromotionType)
+            {
+            case pawn_promotion_type_Queen:  PieceType = piece_type_Queen;  break;
+            case pawn_promotion_type_Rook:   PieceType = piece_type_Rook;   break;
+            case pawn_promotion_type_Bishop: PieceType = piece_type_Bishop; break;
+            case pawn_promotion_type_Knight: PieceType = piece_type_Knight; break;
+            default: break;
+            }
+        }
 
         if (Is_Valid_Square(Square))
         {
@@ -1361,12 +1420,23 @@ internal void LookAllDirections(app_state *AppState, game_state *GameState, piec
 #define En_Passant_Row_White 4
 #define En_Passant_Row_Black 3
 
+internal void LookPawnPromotion(app_state *AppState, game_state *GameState, piece Piece, square Square)
+{
+    for (move_type MoveType = move_type_PromoteQueen;
+         MoveType <= move_type_PromoteKnight;
+         ++MoveType)
+    {
+        AddPotential(AppState, GameState, Piece, Square, MoveType);
+    }
+}
+
 internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col)
 {
     u8 PieceColor = Get_Piece_Color(Piece);
     s8 Multiplier = 1;
     s8 StartingRow = 1;
     s8 EnPassantRow = En_Passant_Row_White;
+    s8 LastRow = PieceColor ? 0 : 7;
 
     if (Is_Black_Piece(Piece))
     {
@@ -1390,6 +1460,11 @@ internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, 
 
         if (Is_Valid_Square(Square) && !Is_Valid_Piece(AppState->Squares[Square]))
         {
+            if (CurrentRow == LastRow)
+            {
+                LookPawnPromotion(AppState, GameState, Piece, Square);
+            }
+
             AddPotential(AppState, GameState, Piece, Square, move_type_Move);
         }
         else
@@ -1411,6 +1486,11 @@ internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, 
             Is_Valid_Piece(AppState->Squares[Square]) &&
             Get_Piece_Color(AppState->Squares[Square]) != PieceColor)
         {
+            if (CurrentRow == LastRow)
+            {
+                LookPawnPromotion(AppState, GameState, Piece, Square);
+            }
+
             AddPotential(AppState, GameState, Piece, Square, move_type_Move);
         }
     }
@@ -1521,13 +1601,30 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
         }
 
         piece Piece = I;
-        s8 Square = GameState->Piece[I];
+        s8 Square = GameState->Piece[Piece];
         s8 Row = Square / 8;
         s8 Col = Square % 8;
 
+        u8 PieceType = PieceTypeTable[Piece];
+
+        /* @CopyPasta GetGameStateScore */
+        if (PieceType == piece_type_Pawn)
+        {
+            pawn_promotion_type PromotionType = GameState->PawnPromotion[Piece];
+
+            switch (PromotionType)
+            {
+            case pawn_promotion_type_Queen:  PieceType = piece_type_Queen;  break;
+            case pawn_promotion_type_Rook:   PieceType = piece_type_Rook;   break;
+            case pawn_promotion_type_Bishop: PieceType = piece_type_Bishop; break;
+            case pawn_promotion_type_Knight: PieceType = piece_type_Knight; break;
+            default: break;
+            }
+        }
+
         if (Is_Valid_Square(Square))
         {
-            switch (PieceTypeTable[I])
+            switch (PieceType)
             {
             case piece_type_Rook:
             {
@@ -2021,6 +2118,7 @@ internal void DrawBoard(app_state *AppState)
     for (s32 I = 0; I < piece_Count; ++I)
     {
         square Square = CurrentState.Piece[I];
+        b32 IsWhitePiece = Is_White_Piece(I);
 
         if (Is_Valid_Square(Square) && IsTextureReady(Ui->ChessPieceTexture))
         {
@@ -2030,7 +2128,23 @@ internal void DrawBoard(app_state *AppState)
             int X = (Col * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
             int Y = (((BOARD_SIZE - 1) - Row) * SQUARE_SIZE_IN_PIXELS) + BOARD_PADDING;
 
-            ivec2 PieceTextureOffset = PIECE_TEXTURE_OFFSET[I];
+            piece Piece = I;
+            u8 Promotion = CurrentState.PawnPromotion[I];
+
+            if (Promotion)
+            {
+                switch (Promotion)
+                {
+                case pawn_promotion_type_Queen:  { Piece = IsWhitePiece ? piece_White_Queen : piece_Black_Queen; } break;
+                case pawn_promotion_type_Rook:   { Piece = IsWhitePiece ? piece_White_Queen_Rook : piece_Black_Queen_Rook; } break;
+                case pawn_promotion_type_Bishop: { Piece = IsWhitePiece ? piece_White_Queen_Bishop : piece_Black_Queen_Bishop; } break;
+                case pawn_promotion_type_Knight: { Piece = IsWhitePiece ? piece_White_Queen_Knight : piece_Black_Queen_Knight; } break;
+                default: break;
+                }
+            }
+
+
+            ivec2 PieceTextureOffset = PIECE_TEXTURE_OFFSET[Piece];
             Color Tint = {255,212,255,255};
             Vector2 Origin = {0,0};
             Rectangle Source, Dest;
