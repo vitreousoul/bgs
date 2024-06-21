@@ -388,8 +388,10 @@ typedef struct
 {
     Vector2 MousePosition;
     int MousePrimaryDown;
-    ivec2 HoverSquare;
-    ivec2 SelectedSquare;
+
+    ivec2 HoverSquare; /* TODO: HoverSquare should eventually be deleted once we have a concept of hot/active in the UI. */
+    ivec2 SelectedSquare; /* TODO: SelectedSquare should eventually be deleted once we have a concept of hot/active in the UI. */
+
     ivec2 MoveSquare;
     Texture2D ChessPieceTexture;
 
@@ -407,6 +409,15 @@ typedef enum
     app_state_flags_IsBotPlayingAsWhite,
     app_state_flags_Count,
 } app_state_flags;
+
+typedef enum
+{
+    user_input_mode_Null,
+    user_input_mode_TheUsersTurn,
+    user_input_mode_TheBotsTurn,
+    user_input_mode_PawnPromotion,
+    user_input_mode_Count
+} user_input_mode;
 
 typedef struct
 {
@@ -433,6 +444,7 @@ typedef struct
     game_tree *FreeGameTree;
 
     ui Ui;
+    user_input_mode UserInputMode;
 
     u8 Squares[64];
     game_tree GameTreeNodePool[Game_Tree_Node_Pool_Size];
@@ -1833,9 +1845,36 @@ internal Vector2 PositionToSquarePosition(Vector2 Position)
     return Result;
 }
 
-internal int SquareValueOnBoard(int X, int Y)
+internal ivec2 PositionToPawnPromotionSquarePosition(app_state *AppState, Vector2 Position)
+{
+    ivec2 Result;
+
+    s32 BorderWidth = 6; /* @Copypasta DrawBoard */
+    s32 Width = 4 * SQUARE_SIZE_IN_PIXELS;
+    s32 Height = SQUARE_SIZE_IN_PIXELS;
+    s32 X = 0.5f * (SCREEN_WIDTH - Width) + BorderWidth;
+    s32 Y = 0.5f * (SCREEN_HEIGHT - Height) + BorderWidth;
+
+    Result.X = X / SQUARE_SIZE_IN_PIXELS;
+    Result.Y = Y / SQUARE_SIZE_IN_PIXELS;
+
+    if(Result.X < 0 || Result.X >= 4 || Result.Y != 0)
+    {
+        Result.X = -1;
+        Result.Y = -1;
+    }
+
+    return Result;
+}
+
+internal b32 SquareValueOnBoard(int X, int Y)
 {
     return X >= 0 && X < BOARD_SIZE && Y >= 0 && Y < BOARD_SIZE;
+}
+
+internal b32 SquareValueOnPawnPromotionPicker(int X, int Y)
+{
+    return X >= 0 && X < 4 && Y == 0;
 }
 
 internal int IVec2Equal(ivec2 A, ivec2 B)
@@ -1851,49 +1890,66 @@ internal void HandleUserInput(app_state *AppState)
     Ui->MousePosition = GetMousePosition();
     Ui->MousePrimaryDown = IsMouseButtonPressed(0);
 
-    Vector2 MouseSquarePosition = PositionToSquarePosition(Ui->MousePosition);
-    Ui->HoverSquare = (ivec2){(int)MouseSquarePosition.x, (int)MouseSquarePosition.y};
-    int OnBoard = SquareValueOnBoard(Ui->HoverSquare.X, Ui->HoverSquare.Y);
+    switch (AppState->UserInputMode)
+    {
+    case user_input_mode_TheBotsTurn:
+    {
+    } break;
+    case user_input_mode_PawnPromotion:
+    {
+        ivec2 MouseSquarePosition = PositionToPawnPromotionSquarePosition(AppState, Ui->MousePosition);
+        Ui->HoverSquare = (ivec2){MouseSquarePosition.X, MouseSquarePosition.Y};
+        b32 OnBoard = SquareValueOnPawnPromotionPicker(Ui->HoverSquare.X, Ui->HoverSquare.Y);
+    } break;
+    case user_input_mode_TheUsersTurn:
+    default:
+    {
+        Vector2 MouseSquarePosition = PositionToSquarePosition(Ui->MousePosition);
+        Ui->HoverSquare = (ivec2){(int)MouseSquarePosition.x, (int)MouseSquarePosition.y};
+        b32 OnBoard = SquareValueOnBoard(Ui->HoverSquare.X, Ui->HoverSquare.Y);
+        game_tree *GameTreeCurrent = AppState->GameTreeCurrent;
 
-    if (Ui->MousePrimaryDown && OnBoard)
-    {
-        if (Ui->SelectedSquare.X == -1 && Ui->SelectedSquare.Y == -1)
+        if (Ui->MousePrimaryDown && OnBoard)
         {
-            Ui->SelectedSquare = (ivec2){Ui->HoverSquare.X, Ui->HoverSquare.Y};
+            if (Ui->SelectedSquare.X == -1 && Ui->SelectedSquare.Y == -1)
+            {
+                Ui->SelectedSquare = (ivec2){Ui->HoverSquare.X, Ui->HoverSquare.Y};
+            }
+            else if (!IVec2Equal(Ui->SelectedSquare, Ui->HoverSquare))
+            {
+                Ui->MoveSquare = (ivec2){Ui->HoverSquare.X, Ui->HoverSquare.Y};
+            }
         }
-        else if (!IVec2Equal(Ui->SelectedSquare, Ui->HoverSquare))
-        {
-            Ui->MoveSquare = (ivec2){Ui->HoverSquare.X, Ui->HoverSquare.Y};
-        }
-    }
 
-    if (IsKeyPressed(KEY_DOWN))
-    {
-        if (AppState->GameTreeCurrent->NextSibling)
+        if (IsKeyPressed(KEY_DOWN))
         {
-            AppState->GameTreeCurrent = AppState->GameTreeCurrent->NextSibling;
+            if (GameTreeCurrent->NextSibling)
+            {
+                GameTreeCurrent = GameTreeCurrent->NextSibling;
+            }
         }
-    }
-    else if (IsKeyPressed(KEY_UP))
-    {
-        if (AppState->GameTreeCurrent->PreviousSibling)
+        else if (IsKeyPressed(KEY_UP))
         {
-            AppState->GameTreeCurrent = AppState->GameTreeCurrent->PreviousSibling;
+            if (GameTreeCurrent->PreviousSibling)
+            {
+                GameTreeCurrent = GameTreeCurrent->PreviousSibling;
+            }
         }
-    }
-    else if (IsKeyPressed(KEY_RIGHT))
-    {
-        if (AppState->GameTreeCurrent->FirstChild)
+        else if (IsKeyPressed(KEY_RIGHT))
         {
-            AppState->GameTreeCurrent = AppState->GameTreeCurrent->FirstChild;
+            if (GameTreeCurrent->FirstChild)
+            {
+                GameTreeCurrent = GameTreeCurrent->FirstChild;
+            }
         }
-    }
-    else if (IsKeyPressed(KEY_LEFT))
-    {
-        if (AppState->GameTreeCurrent->Parent)
+        else if (IsKeyPressed(KEY_LEFT))
         {
-            AppState->GameTreeCurrent = AppState->GameTreeCurrent->Parent;
+            if (GameTreeCurrent->Parent)
+            {
+                GameTreeCurrent = GameTreeCurrent->Parent;
+            }
         }
+    } break;
     }
 
     if (IsKeyPressed(KEY_TAB))
@@ -2000,6 +2056,9 @@ internal void HandleMove(app_state *AppState)
                                       SelectedSquare.Y == En_Passant_Row_Black &&
                                       IsEnPassantCaptureMotion);
 
+                s8 LastRow = IsWhiteTurn ? 7 : 0;
+                b32 PawnPromotion = 0;
+
                 if (WhiteEnPassant || BlackEnPassant)
                 {
                     Move.Type = move_type_EnPassant;
@@ -2029,37 +2088,46 @@ internal void HandleMove(app_state *AppState)
                 {
                     Move.Type = move_type_KingCastle;
                 }
+                else if (PieceTypeTable[Move.Piece] == piece_type_Pawn &&
+                         MoveSquare.Y == LastRow)
+                {
+                    PawnPromotion = 1;
+                    AppState->UserInputMode = user_input_mode_PawnPromotion;
+                }
 
                 /* Debug_PrintPieces(&TempGameState); */
 
-                MakeMove(AppState, &TempGameState, Move);
-
-                /* NOTE: @Copypasta AddPotential */
-                b32 WhiteWasInCheck = Get_Flag(TempGameState.Flags, White_In_Check_Flag);
-                b32 BlackWasInCheck = Get_Flag(TempGameState.Flags, Black_In_Check_Flag);
-                Unset_Flag(TempGameState.Flags, White_In_Check_Flag | Black_In_Check_Flag);
-                b32 WhiteIsInCheck = CheckIfKingIsInCheck(AppState, &TempGameState, piece_White_King);
-                b32 BlackIsInCheck = CheckIfKingIsInCheck(AppState, &TempGameState, piece_Black_King);
-
-                game_tree *Sibling = AppState->GameTreeCurrent->FirstChild;
-
-                /* NOTE: @Copypasta AddPotential */
-                if ((IsWhiteTurn && WhiteIsInCheck) || (!IsWhiteTurn && BlackIsInCheck))
+                if (!PawnPromotion)
                 {
-                    /* NOTE: Don't allow moving into check by zeroing out the Sibling... */
-                    Sibling = 0;
-                }
+                    MakeMove(AppState, &TempGameState, Move);
 
-                while (Sibling)
-                {
-                    b32 AreEqual = CheckIfGameStatesAreEqual(&TempGameState, &Sibling->State);
+                    /* NOTE: @Copypasta AddPotential */
+                    b32 WhiteWasInCheck = Get_Flag(TempGameState.Flags, White_In_Check_Flag);
+                    b32 BlackWasInCheck = Get_Flag(TempGameState.Flags, Black_In_Check_Flag);
+                    Unset_Flag(TempGameState.Flags, White_In_Check_Flag | Black_In_Check_Flag);
+                    b32 WhiteIsInCheck = CheckIfKingIsInCheck(AppState, &TempGameState, piece_White_King);
+                    b32 BlackIsInCheck = CheckIfKingIsInCheck(AppState, &TempGameState, piece_Black_King);
 
-                    if (AreEqual)
+                    game_tree *Sibling = AppState->GameTreeCurrent->FirstChild;
+
+                    /* NOTE: @Copypasta AddPotential */
+                    if ((IsWhiteTurn && WhiteIsInCheck) || (!IsWhiteTurn && BlackIsInCheck))
                     {
-                        MakeGameTreeTheRoot(AppState, Sibling);
+                        /* NOTE: Don't allow moving into check by zeroing out the Sibling... */
+                        Sibling = 0;
                     }
 
-                    Sibling = Sibling->NextSibling;
+                    while (Sibling)
+                    {
+                        b32 AreEqual = CheckIfGameStatesAreEqual(&TempGameState, &Sibling->State);
+
+                        if (AreEqual)
+                        {
+                            MakeGameTreeTheRoot(AppState, Sibling);
+                        }
+
+                        Sibling = Sibling->NextSibling;
+                    }
                 }
             }
         }
@@ -2069,6 +2137,18 @@ internal void HandleMove(app_state *AppState)
     }
 }
 
+internal void DrawPiece(app_state *AppState, piece Piece, f32 X, f32 Y)
+{
+    ivec2 PieceTextureOffset = PIECE_TEXTURE_OFFSET[Piece];
+    Color Tint = {255,212,255,255};
+    Vector2 Origin = {0,0};
+    Rectangle Source, Dest;
+
+    Source = (Rectangle){PieceTextureOffset.X, PieceTextureOffset.Y, PIECE_TEXTURE_SIZE, PIECE_TEXTURE_SIZE};
+    Dest = (Rectangle){X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS};
+    DrawTexturePro(AppState->Ui.ChessPieceTexture, Source, Dest, Origin, 0.0f, Tint);
+}
+
 internal void DrawBoard(app_state *AppState)
 {
     ryn_BEGIN_TIMED_BLOCK(timed_block_DrawBoard);
@@ -2076,7 +2156,7 @@ internal void DrawBoard(app_state *AppState)
     game_state CurrentState = AppState->GameTreeCurrent->State;
 
     { /* NOTE: Draw board backing. */
-        int BorderWidth = 6;
+        int BorderWidth = 6; /* @Copypasta PositionToPawnPromotionSquarePosition */
         int X = BOARD_PADDING - BorderWidth;
         int Y = BOARD_PADDING - BorderWidth;
         int Width = (BOARD_SIZE * SQUARE_SIZE_IN_PIXELS) + (2 * BorderWidth);
@@ -2147,15 +2227,7 @@ internal void DrawBoard(app_state *AppState)
                 }
             }
 
-
-            ivec2 PieceTextureOffset = PIECE_TEXTURE_OFFSET[Piece];
-            Color Tint = {255,212,255,255};
-            Vector2 Origin = {0,0};
-            Rectangle Source, Dest;
-
-            Source = (Rectangle){PieceTextureOffset.X, PieceTextureOffset.Y, PIECE_TEXTURE_SIZE, PIECE_TEXTURE_SIZE};
-            Dest = (Rectangle){X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS};
-            DrawTexturePro(Ui->ChessPieceTexture, Source, Dest, Origin, 0.0f, Tint);
+            DrawPiece(AppState, Piece, X, Y);
         }
     }
 
@@ -2194,28 +2266,39 @@ internal void DrawBoard(app_state *AppState)
         }
     }
 
-#if 0
-    {
-        /* NOTE: Draw familial options for current game-tree. */
-        b32 HasNextSibling = AppState->GameTreeCurrent->NextSibling != 0;
-        b32 HasPreviousSibling = AppState->GameTreeCurrent->PreviousSibling != 0;
-        b32 HasFirstChild = AppState->GameTreeCurrent->FirstChild != 0;
-        b32 HasParent = AppState->GameTreeCurrent->Parent != 0;
-
-#define Get_Color(x) UiColor[AppState->Ui.Theme][x ? ui_color_Active : ui_color_Inactive]
-        Color HasNextSiblingColor = Get_Color(HasNextSibling);
-        Color HasPreviousSiblingColor = Get_Color(HasPreviousSibling);
-        Color HasFirstChildColor = Get_Color(HasFirstChild);
-        Color HasParentColor = Get_Color(HasParent);
-#undef Get_Color
-
-        DrawCircle(SCREEN_WIDTH - 40, 60, 13.0f, HasNextSiblingColor);
-        DrawCircle(SCREEN_WIDTH - 80, 60, 13.0f, HasPreviousSiblingColor);
-        DrawCircle(SCREEN_WIDTH - 60, 80, 13.0f, HasFirstChildColor);
-        DrawCircle(SCREEN_WIDTH - 60, 40, 13.0f, HasParentColor);
-    }
-#endif
     ryn_END_TIMED_BLOCK(timed_block_DrawBoard);
+}
+
+internal void DrawPawnPromotionBoard(app_state *AppState)
+{
+    s32 BorderWidth = 6;
+
+    s32 BoardWidth = (2 * BorderWidth) + (4 * SQUARE_SIZE_IN_PIXELS);
+    s32 BoardHeight = (2 * BorderWidth) + SQUARE_SIZE_IN_PIXELS;
+
+    s32 BoardX = 0.5f * (SCREEN_WIDTH - BoardWidth);
+    s32 BoardY = 0.5f * (SCREEN_HEIGHT - BoardHeight);
+
+    /* NOTE: Alpha curtain */
+    DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, (Color){0, 0, 0, 100});
+
+    ui_color_type BackgroundColorType = ui_color_Active;
+    Color BackgroundColor = UiColor[AppState->Ui.Theme][BackgroundColorType];
+    DrawRectangle(BoardX, BoardY, BoardWidth, BoardHeight, BackgroundColor);
+
+    for (s32 I = 0; I < 4; ++I)
+    {
+        s32 X = BoardX + BorderWidth + (I * SQUARE_SIZE_IN_PIXELS);
+        s32 Y = BoardY + BorderWidth;
+        s32 Width = SQUARE_SIZE_IN_PIXELS;
+        s32 Height = SQUARE_SIZE_IN_PIXELS;
+        b32 IsDarkSquare = (I & 1) == 0;
+
+        ui_color_type SquareColorType = IsDarkSquare ? ui_color_Dark_Square : ui_color_Light_Square;
+        Color SquareColor = UiColor[AppState->Ui.Theme][SquareColorType];
+
+        DrawRectangle(X, Y, Width, Height, SquareColor);
+    }
 }
 
 internal void DrawGameTree(app_state *AppState)
@@ -2639,7 +2722,7 @@ int main(void)
 
         ryn_BEGIN_TIMED_BLOCK(timed_block_HandleInputAndMove);
         HandleUserInput(&AppState);
-        if (IsTheBotsTurn)
+        if (0&&IsTheBotsTurn)
         {
             LetTheBotMakeAMove(&AppState);
         }
@@ -2664,6 +2747,10 @@ int main(void)
 
         DrawBoard(&AppState);
         DrawGameTree(&AppState);
+        if (AppState.UserInputMode == user_input_mode_PawnPromotion)
+        {
+            DrawPawnPromotionBoard(&AppState);
+        }
         DebugDrawFreeTreeCount(&AppState);
 
         ryn_EndProfile();
