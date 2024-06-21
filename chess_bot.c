@@ -1464,8 +1464,10 @@ internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, 
             {
                 LookPawnPromotion(AppState, GameState, Piece, Square);
             }
-
-            AddPotential(AppState, GameState, Piece, Square, move_type_Move);
+            else
+            {
+                AddPotential(AppState, GameState, Piece, Square, move_type_Move);
+            }
         }
         else
         {
@@ -1490,8 +1492,10 @@ internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, 
             {
                 LookPawnPromotion(AppState, GameState, Piece, Square);
             }
-
-            AddPotential(AppState, GameState, Piece, Square, move_type_Move);
+            else
+            {
+                AddPotential(AppState, GameState, Piece, Square, move_type_Move);
+            }
         }
     }
 
