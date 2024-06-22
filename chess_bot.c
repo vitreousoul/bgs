@@ -1,10 +1,8 @@
 /*
     BUGS:
-        TODO: When checking if a king is in check, we do _not_ take into account pawn promotion. So a pawn promoted to a queen won't be considered...
-        TODO: The engine sets all check states as checkmate states, which is not good.
+        ...
 
     Engine Functionality:
-        TODO: Handle pawn promotion.
         TODO: Create game_state valuing functions.
         TODO: Evaluate the ChildScoreAverage value for a game_tree's list of children.
 
@@ -692,6 +690,27 @@ internal void MakeMove(app_state *AppState, game_state *GameState, move Move)
     GameState->LastMove = Move;
 }
 
+internal piece_type PromotePieceIfPossible(game_state *GameState, piece Piece)
+{
+    piece_type PieceType = PieceTypeTable[Piece];
+
+    if (PieceType == piece_type_Pawn)
+    {
+        pawn_promotion_type PromotionType = GameState->PawnPromotion[Piece];
+
+        switch (PromotionType)
+        {
+        case pawn_promotion_type_Queen:  PieceType = piece_type_Queen;  break;
+        case pawn_promotion_type_Rook:   PieceType = piece_type_Rook;   break;
+        case pawn_promotion_type_Bishop: PieceType = piece_type_Bishop; break;
+        case pawn_promotion_type_Knight: PieceType = piece_type_Knight; break;
+        default: break;
+        }
+    }
+
+    return PieceType;
+}
+
 internal b32 CheckIfKingIsInCheck(app_state *AppState, game_state *GameState, piece KingPiece)
 {
     Assert(KingPiece == piece_White_King || KingPiece == piece_Black_King);
@@ -726,7 +745,8 @@ internal b32 CheckIfKingIsInCheck(app_state *AppState, game_state *GameState, pi
 
                 if (Is_Valid_Piece(TargetPiece))
                 {
-                    piece_type PieceType = PieceTypeTable[TargetPiece];
+                    piece_type PieceType = PromotePieceIfPossible(GameState, TargetPiece);
+
                     u8 TargetPieceColor = Get_Piece_Color(TargetPiece);
 
                     if (KingPieceColor == TargetPieceColor)
@@ -791,7 +811,7 @@ internal b32 CheckIfKingIsInCheck(app_state *AppState, game_state *GameState, pi
 
                 if (Is_Valid_Square(NewSquare) &&
                     Is_Valid_Piece(TargetPiece) &&
-                    (PieceTypeTable[TargetPiece] == piece_type_Knight) &&
+                    (PromotePieceIfPossible(GameState, TargetPiece) == piece_type_Knight) &&
                     (Get_Piece_Color(TargetPiece) != KingPieceColor))
                 {
                     IsInCheck = 1;
@@ -1231,23 +1251,10 @@ internal f32 GetGameStateScore(app_state *AppState, game_state *GameState)
     for (s32 I = 0; I < piece_Count; ++I)
     {
         square Square = GameState->Piece[I];
-        u8 PieceType = PieceTypeTable[I];
         piece Piece = I;
+        u8 PieceType = PromotePieceIfPossible(GameState, I);
 
         /* @CopyPasta GeneratePotentials */
-        if (PieceType == piece_type_Pawn)
-        {
-            pawn_promotion_type PromotionType = GameState->PawnPromotion[Piece];
-
-            switch (PromotionType)
-            {
-            case pawn_promotion_type_Queen:  PieceType = piece_type_Queen;  break;
-            case pawn_promotion_type_Rook:   PieceType = piece_type_Rook;   break;
-            case pawn_promotion_type_Bishop: PieceType = piece_type_Bishop; break;
-            case pawn_promotion_type_Knight: PieceType = piece_type_Knight; break;
-            default: break;
-            }
-        }
 
         if (Is_Valid_Square(Square))
         {
@@ -1317,9 +1324,9 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
         /* NOTE: Don't allow moving into check by zeroing out the GameTree... */
         GameTree = 0;
 
-        if (WhiteWasInCheck || BlackWasInCheck)
+        if ((Is_White_Turn(GameState) && WhiteWasInCheck) || (!Is_White_Turn(GameState) && BlackWasInCheck))
         {
-            Set_Flag(GameState->Flags, Game_Over_Flag);
+            Set_Flag(NewGameState.Flags, Game_Over_Flag);
         }
     }
     else
@@ -1596,14 +1603,23 @@ internal void LookKnight(app_state *AppState, game_state *GameState, piece Piece
 
 internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece)
 {
-    if (CanCastle(AppState, GameState, 1))
-    {
-        AddPotential(AppState, GameState, Piece, 255, move_type_QueenCastle);
-    }
+    b32 WhiteInCheck = Get_Flag(GameState->Flags, White_In_Check_Flag);
+    b32 BlackInCheck = Get_Flag(GameState->Flags, Black_In_Check_Flag);
+    b32 IsWhiteTurn = Is_White_Turn(GameState);
 
-    if (CanCastle(AppState, GameState, 0))
+    b32 PlayerNotInCheck = (IsWhiteTurn && !WhiteInCheck) || (!IsWhiteTurn && !BlackInCheck);
+
+    if (PlayerNotInCheck)
     {
-        AddPotential(AppState, GameState, Piece, 255, move_type_KingCastle);
+        if (CanCastle(AppState, GameState, 1))
+        {
+            AddPotential(AppState, GameState, Piece, 255, move_type_QueenCastle);
+        }
+
+        if (CanCastle(AppState, GameState, 0))
+        {
+            AddPotential(AppState, GameState, Piece, 255, move_type_KingCastle);
+        }
     }
 }
 
@@ -1647,22 +1663,9 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
         s8 Row = Square / 8;
         s8 Col = Square % 8;
 
-        u8 PieceType = PieceTypeTable[Piece];
+        u8 PieceType = PromotePieceIfPossible(GameState, Piece);
 
         /* @CopyPasta GetGameStateScore */
-        if (PieceType == piece_type_Pawn)
-        {
-            pawn_promotion_type PromotionType = GameState->PawnPromotion[Piece];
-
-            switch (PromotionType)
-            {
-            case pawn_promotion_type_Queen:  PieceType = piece_type_Queen;  break;
-            case pawn_promotion_type_Rook:   PieceType = piece_type_Rook;   break;
-            case pawn_promotion_type_Bishop: PieceType = piece_type_Bishop; break;
-            case pawn_promotion_type_Knight: PieceType = piece_type_Knight; break;
-            default: break;
-            }
-        }
 
         if (Is_Valid_Square(Square))
         {
@@ -1966,30 +1969,30 @@ internal void HandleUserInput(app_state *AppState)
 
         if (IsKeyPressed(KEY_DOWN))
         {
-            if (GameTreeCurrent->NextSibling)
+            if (AppState->GameTreeCurrent->NextSibling)
             {
-                GameTreeCurrent = GameTreeCurrent->NextSibling;
+                AppState->GameTreeCurrent = AppState->GameTreeCurrent->NextSibling;
             }
         }
         else if (IsKeyPressed(KEY_UP))
         {
-            if (GameTreeCurrent->PreviousSibling)
+            if (AppState->GameTreeCurrent->PreviousSibling)
             {
-                GameTreeCurrent = GameTreeCurrent->PreviousSibling;
+                AppState->GameTreeCurrent = AppState->GameTreeCurrent->PreviousSibling;
             }
         }
         else if (IsKeyPressed(KEY_RIGHT))
         {
-            if (GameTreeCurrent->FirstChild)
+            if (AppState->GameTreeCurrent->FirstChild)
             {
-                GameTreeCurrent = GameTreeCurrent->FirstChild;
+                AppState->GameTreeCurrent = AppState->GameTreeCurrent->FirstChild;
             }
         }
         else if (IsKeyPressed(KEY_LEFT))
         {
-            if (GameTreeCurrent->Parent)
+            if (AppState->GameTreeCurrent->Parent)
             {
-                GameTreeCurrent = GameTreeCurrent->Parent;
+                AppState->GameTreeCurrent = AppState->GameTreeCurrent->Parent;
             }
         }
     } break;
@@ -2768,7 +2771,7 @@ int main(void)
     AppState.BotTicksPerMove = 48;
     AppState.UserInputMode = user_input_mode_TheUsersTurn;
 
-#if 1
+#if 0
     SetupForTesting(&AppState, &AppState.GameTreeRoot.State);
 #endif
 
@@ -2800,7 +2803,7 @@ int main(void)
 
         ryn_BEGIN_TIMED_BLOCK(timed_block_HandleInputAndMove);
         HandleUserInput(&AppState);
-        if (0&&IsTheBotsTurn)
+        if (IsTheBotsTurn)
         {
             LetTheBotMakeAMove(&AppState);
         }
