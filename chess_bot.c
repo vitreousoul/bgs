@@ -422,6 +422,7 @@ typedef enum
 {
     app_state_flags_GameTreeNodePoolIsFull,
     app_state_flags_IsBotPlayingAsWhite,
+    app_state_flags_DoNotLetTheBotMakeAMove,
     app_state_flags_Count,
 } app_state_flags;
 
@@ -774,6 +775,10 @@ internal b32 CheckIfKingIsInCheck(app_state *AppState, game_state *GameState, pi
                                 GameState->DebugCheckPiece = TargetPiece;
                             }
                         }
+                        else if (PieceType == piece_type_King && Distance == 1)
+                        {
+                            IsInCheck = 1;
+                        }
                     } break;
                     case 1: case 3: case 4: case 6:
                     {
@@ -781,6 +786,10 @@ internal b32 CheckIfKingIsInCheck(app_state *AppState, game_state *GameState, pi
                         {
                             IsInCheck = 1;
                             GameState->DebugCheckPiece = TargetPiece;
+                        }
+                        else if (PieceType == piece_type_King && Distance == 1)
+                        {
+                            IsInCheck = 1;
                         }
                     } break;
                     }
@@ -1116,6 +1125,7 @@ internal game_tree *CreateGameTree(app_state *AppState)
 
     return NewGameTree;
 }
+
 internal void Debug_CheckThatTreeDoesNotContainNode(app_state *AppState, game_tree *RootNode, game_tree *TestNode)
 {
     ClearTraverals(AppState);
@@ -1278,6 +1288,36 @@ internal f32 GetGameStateScore(app_state *AppState, game_state *GameState)
     return Score;
 }
 
+internal void Debug_PrintBoard(app_state *AppState)
+{
+    char PieceDisplay[piece_Count] = {
+        'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R',
+        'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P',
+        'p', 'p', 'p', 'p', 'p', 'p', 'p', 'p',
+        'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r',
+    };
+
+    for (s32 Row = 7; Row >= 0; --Row)
+    {
+        for (s32 Col = 0; Col < 8; ++Col)
+        {
+            s32 SquareIndex = Get_Square_Index(Row, Col);
+            piece Piece = AppState->Squares[SquareIndex];
+
+            if (Is_Valid_Piece(Piece))
+            {
+                DebugPrint("%c  ", PieceDisplay[Piece]);
+            }
+            else
+            {
+                DebugPrint("-  ");
+            }
+        }
+        DebugPrint("\n");
+    }
+    DebugPrint("\n");
+}
+
 internal void AddPotential(app_state *AppState, game_state *GameState, piece Piece, square EndSquare, move_type MoveType)
 {
     Assert(!AppState->FreeGameTree || AppState->FreeGameTree != AppState->FreeGameTree->NextSibling);
@@ -1323,11 +1363,6 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
     {
         /* NOTE: Don't allow moving into check by zeroing out the GameTree... */
         GameTree = 0;
-
-        if ((Is_White_Turn(GameState) && WhiteWasInCheck) || (!Is_White_Turn(GameState) && BlackWasInCheck))
-        {
-            Set_Flag(NewGameState.Flags, Game_Over_Flag);
-        }
     }
     else
     {
@@ -1475,6 +1510,26 @@ internal void LookPawnPromotion(app_state *AppState, game_state *GameState, piec
     }
 }
 
+internal b32 CheckIfLastMoveAllowsEnPassant(game_state *GameState, s8 CurrentCol)
+{
+    s32 Multiplier = Is_White_Piece(GameState->LastMove.Piece) ? -1 : 1;
+
+    s8 BeginRow = GameState->LastMove.BeginSquare / 8;
+    s8 EndRow = GameState->LastMove.EndSquare / 8;
+    s8 BeginCol = GameState->LastMove.BeginSquare % 8;
+    s8 EndCol = GameState->LastMove.EndSquare % 8;
+
+    piece MovePieceType = PieceTypeTable[GameState->LastMove.Piece];
+
+    b32 IsPawnMove = MovePieceType == piece_type_Pawn;
+    b32 WasTwoSquareMove = Multiplier * (EndRow - BeginRow) == -2;
+    b32 LastMoveOnSameCol = (BeginCol == EndCol) && (EndCol == CurrentCol);
+
+    b32 AllowsEnPassant = IsPawnMove && WasTwoSquareMove && LastMoveOnSameCol;
+
+    return AllowsEnPassant;
+}
+
 internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, s8 Row, s8 Col)
 {
     u8 PieceColor = Get_Piece_Color(Piece);
@@ -1551,19 +1606,7 @@ internal void LookPawn(app_state *AppState, game_state *GameState, piece Piece, 
         {
             s8 CurrentCol = Col + I;
 
-            piece MovePieceType = PieceTypeTable[GameState->LastMove.Piece];
-
-            s8 BeginRow = GameState->LastMove.BeginSquare / 8;
-            s8 EndRow = GameState->LastMove.EndSquare / 8;
-
-            s8 BeginCol = GameState->LastMove.BeginSquare % 8;
-            s8 EndCol = GameState->LastMove.EndSquare % 8;
-
-            b32 IsPawnMove = MovePieceType == piece_type_Pawn;
-            b32 WasTwoSquareMove = Multiplier * (EndRow - BeginRow) == -2;
-            b32 LastMoveOnSameCol = (BeginCol == EndCol) && (EndCol == CurrentCol);
-
-            if (IsPawnMove && WasTwoSquareMove && LastMoveOnSameCol)
+            if (CheckIfLastMoveAllowsEnPassant(GameState, CurrentCol))
             {
                 square CaptureSquare = Get_Square_Index(Row + Multiplier, CurrentCol);
                 AddPotential(AppState, GameState, Piece, CaptureSquare, move_type_EnPassant);
@@ -1709,6 +1752,15 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
             }
         }
     }
+
+    if (AppState->GameTreeCurrent->FirstChild == 0)
+    {
+        /* NOTE: We generated potentials for the current game tree, and at this
+           point, there are no children for the game tree. We assume this means
+           the game is over.
+        */
+        Set_Flag(AppState->GameTreeCurrent->State.Flags, Game_Over_Flag);
+    }
 }
 
 internal void GenerateAllPotentials(app_state *AppState)
@@ -1841,14 +1893,10 @@ internal void SetupForTesting(app_state *AppState, game_state *GameState)
     DebugMovePiece(AppState, GameState, piece_White_Pawn_E, E5);
     DebugMovePiece(AppState, GameState, piece_Black_Pawn_D, D5);
 #else
-    DebugMovePiece(AppState, GameState, piece_White_Pawn_E, E4);
-    DebugMovePiece(AppState, GameState, piece_Black_Pawn_F, F5);
-    DebugMovePiece(AppState, GameState, piece_White_Pawn_E, F5);
-    DebugMovePiece(AppState, GameState, piece_Black_Pawn_G, G6);
-    DebugMovePiece(AppState, GameState, piece_White_Pawn_E, G6);
-    DebugMovePiece(AppState, GameState, piece_Black_King_Bishop, G7);
-    /* DebugMovePiece(AppState, GameState, piece_White_Pawn_E, H7); */
-    /* DebugMovePiece(AppState, GameState, piece_Black_King_Bishop, H6); */
+    DebugMovePiece(AppState, GameState, piece_White_Pawn_G, G4);
+    DebugMovePiece(AppState, GameState, piece_Black_King_Knight, F6);
+    DebugMovePiece(AppState, GameState, piece_White_Pawn_G, G5);
+    DebugMovePiece(AppState, GameState, piece_Black_Queen_Knight, C6);
 #endif
 }
 
@@ -1967,6 +2015,11 @@ internal void HandleUserInput(app_state *AppState)
             }
         }
 
+        if (IsKeyPressed(KEY_SPACE))
+        {
+            Toggle_Flag(AppState->Flags, app_state_flags_DoNotLetTheBotMakeAMove);
+        }
+
         if (IsKeyPressed(KEY_DOWN))
         {
             if (AppState->GameTreeCurrent->NextSibling)
@@ -2026,20 +2079,6 @@ internal void Debug_PrintPieces(game_state *GameState)
     DebugPrint("\n");
 }
 
-internal void Debug_PrintBoard(app_state *AppState)
-{
-    for (s32 Row = 7; Row >= 0; --Row)
-    {
-        for (s32 Col = 0; Col < 8; ++Col)
-        {
-            s32 SquareIndex = Get_Square_Index(Row, Col);
-            DebugPrint("%2d  ", AppState->Squares[SquareIndex]);
-        }
-        DebugPrint("\n");
-    }
-    DebugPrint("\n");
-}
-
 internal void LetTheBotMakeAMove(app_state *AppState)
 {
     game_tree *TheBotsChosenGameState = AppState->GameTreeCurrent->FirstChild;
@@ -2076,7 +2115,7 @@ internal void HandleMove(app_state *AppState)
         move *Move = &AppState->CurrentMove;
         if (!Move->Type)
         {
-            Move->Type = move_type_Move; /* TODO: Handle castling, and en passant. */
+            Move->Type = move_type_Move;
         }
         Move->Piece = AppState->Squares[SquareIndex];
         Move->BeginSquare = Get_Square_Index(SelectedSquare.Y, SelectedSquare.X);
@@ -2093,11 +2132,14 @@ internal void HandleMove(app_state *AppState)
             b32 IsMoveablePiece = (IsWhitePiece && IsWhiteTurn) || !(IsWhitePiece || IsWhiteTurn);
 
             Move->Piece = AppState->Squares[Move->BeginSquare];
+            piece TargetPiece = AppState->Squares[Move->EndSquare];
 
             if (Is_Valid_Piece(Move->Piece) && IsMoveablePiece)
             {
                 b32 IsEnPassantCaptureMotion = (MoveSquare.X == SelectedSquare.X + 1 ||
                                                 MoveSquare.X == SelectedSquare.X - 1);
+
+                b32 EnPassantAllowed = CheckIfLastMoveAllowsEnPassant(&TempGameState, MoveSquare.X);
 
                 b32 WhiteEnPassant = (Is_White_Turn(&TempGameState) &&
                                       SelectedSquare.Y == En_Passant_Row_White &&
@@ -2111,7 +2153,8 @@ internal void HandleMove(app_state *AppState)
 
                 Assert(Move->Piece >= 0 && Move->Piece < piece_Count);
                 if (PieceTypeTable[Move->Piece] == piece_type_Pawn &&
-                    (WhiteEnPassant || BlackEnPassant))
+                    (WhiteEnPassant || BlackEnPassant) &&
+                    EnPassantAllowed)
                 {
                     Move->Type = move_type_EnPassant;
                 }
@@ -2803,7 +2846,7 @@ int main(void)
 
         ryn_BEGIN_TIMED_BLOCK(timed_block_HandleInputAndMove);
         HandleUserInput(&AppState);
-        if (IsTheBotsTurn)
+        if (!Get_Flag(AppState.Flags, app_state_flags_DoNotLetTheBotMakeAMove) && IsTheBotsTurn)
         {
             LetTheBotMakeAMove(&AppState);
         }
@@ -2828,6 +2871,12 @@ int main(void)
 
         DrawBoard(&AppState);
         DrawGameTree(&AppState);
+        { /* NOTE: Draw if the bot is currently allowed to make moves. */
+            b32 BotCanNotMakeAMove = Get_Flag(AppState.Flags, app_state_flags_DoNotLetTheBotMakeAMove);
+            char *Message = BotCanNotMakeAMove ? "Bot paused" : "Bot is playing" ;
+            Color TextColor = BotCanNotMakeAMove ? (Color){26, 40, 26, 255}: (Color){20, 90, 20, 255};
+            DrawText(Message, 0.5f*SCREEN_WIDTH, 4.0f, 16.0f, TextColor);
+        }
         if (AppState.UserInputMode == user_input_mode_PawnPromotion)
         {
             DrawPawnPromotionBoard(&AppState);
