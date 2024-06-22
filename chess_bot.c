@@ -1,6 +1,6 @@
 /*
     BUGS:
-        TODO: When promoting a pawn, the promotion is always a knight, instead of whatever the user selected.
+        TODO: When checking if a king is in check, we do _not_ take into account pawn promotion. So a pawn promoted to a queen won't be considered...
         TODO: The engine sets all check states as checkmate states, which is not good.
 
     Engine Functionality:
@@ -1208,7 +1208,8 @@ internal b32 CheckIfGameStatesAreEqual(game_state *StateA, game_state *StateB)
 
     for (s32 I = 0; I < piece_Count; ++I)
     {
-        if (StateA->Piece[I] != StateB->Piece[I])
+        if (StateA->Piece[I] != StateB->Piece[I] ||
+            StateA->PawnPromotion[I] != StateB->PawnPromotion[I])
         {
             PiecesMatch = 0;
             break;
