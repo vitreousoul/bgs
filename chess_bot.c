@@ -1,5 +1,6 @@
 /*
     BUGS:
+        TODO: When promoting a pawn, the promotion is always a knight, instead of whatever the user selected.
         TODO: The engine sets all check states as checkmate states, which is not good.
 
     Engine Functionality:
@@ -8,7 +9,6 @@
         TODO: Evaluate the ChildScoreAverage value for a game_tree's list of children.
 
     GUI:
-        TODO: Add UI for picking pawn-promotion piece.
         ...
 
     Dev Features:
@@ -322,6 +322,20 @@ typedef enum
     move_type_PromoteKnight
 } move_type;
 
+global_variable piece PawnPromotionPieceLookup[4][2] = {
+    {piece_White_Queen,        piece_Black_Queen},
+    {piece_White_Queen_Rook,   piece_Black_Queen_Rook},
+    {piece_White_Queen_Bishop, piece_Black_Queen_Bishop},
+    {piece_White_Queen_Knight, piece_Black_Queen_Knight}
+};
+
+global_variable move_type PawnPromotionMoveTypeLookup[4] = {
+    move_type_PromoteQueen,
+    move_type_PromoteRook,
+    move_type_PromoteBishop,
+    move_type_PromoteKnight
+};
+
 typedef struct
 {
     move_type Type;
@@ -392,6 +406,9 @@ typedef struct
     ivec2 HoverSquare; /* TODO: HoverSquare should eventually be deleted once we have a concept of hot/active in the UI. */
     ivec2 SelectedSquare; /* TODO: SelectedSquare should eventually be deleted once we have a concept of hot/active in the UI. */
 
+    ivec2 PawnPromotionHoverSquare;
+    ivec2 PawnPromotionSelectedSquare;
+
     ivec2 MoveSquare;
     Texture2D ChessPieceTexture;
 
@@ -445,6 +462,7 @@ typedef struct
 
     ui Ui;
     user_input_mode UserInputMode;
+    move CurrentMove;
 
     u8 Squares[64];
     game_tree GameTreeNodePool[Game_Tree_Node_Pool_Size];
@@ -463,6 +481,8 @@ typedef struct
     s32 BotMoveTick;
 } app_state;
 
+#define DebugPrint printf
+
 #define Has_Free_Game_Tree(AppState)                                 \
     (((AppState)->FreeGameTree != 0) ||                               \
     ((AppState)->GameTreeNodePoolIndex < Game_Tree_Node_Pool_Size))
@@ -475,7 +495,7 @@ internal void Assert_(b32 Proposition, char *FilePath, s32 LineNumber)
     if (!Proposition)
     {
         b32 *NullPtr = 0;
-        printf("Assertion failed on line %d in %s\n", LineNumber, FilePath);
+        DebugPrint("Assertion failed on line %d in %s\n", LineNumber, FilePath);
         /* NOTE: Dereference a null-pointer and crash the program. */
         Proposition = *NullPtr;
     }
@@ -1320,6 +1340,11 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
         GameTree->Parent = AppState->GameTreeCurrent;
 
         GameTree->Score = GetGameStateScore(AppState, &NewGameState);
+
+        AppState->CurrentMove.Type = 0;
+        AppState->CurrentMove.Piece = 0;
+        AppState->CurrentMove.BeginSquare = 0;
+        AppState->CurrentMove.EndSquare = 0;
     }
 }
 
@@ -1612,7 +1637,7 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
                a bunch of if's so maybes it's just cleaner to check after calling
                multiple Look*() functions.
             */
-            printf("we ran out of nodes, breaking.....\n");
+            DebugPrint("we ran out of nodes, breaking.....\n");
             break;
         }
 
@@ -1812,11 +1837,14 @@ internal void SetupForTesting(app_state *AppState, game_state *GameState)
     DebugMovePiece(AppState, GameState, piece_White_Pawn_E, E5);
     DebugMovePiece(AppState, GameState, piece_Black_Pawn_D, D5);
 #else
-    /* DebugMovePiece(AppState, GameState, piece_White_Pawn_E, E4); */
-    /* DebugMovePiece(AppState, GameState, piece_Black_Pawn_E, E5); */
-    /* DebugMovePiece(AppState, GameState, piece_White_King_Bishop, C4); */
-    /* DebugMovePiece(AppState, GameState, piece_Black_Queen_Knight, C6); */
-    /* DebugMovePiece(AppState, GameState, piece_White_Queen, F3); */
+    DebugMovePiece(AppState, GameState, piece_White_Pawn_E, E4);
+    DebugMovePiece(AppState, GameState, piece_Black_Pawn_F, F5);
+    DebugMovePiece(AppState, GameState, piece_White_Pawn_E, F5);
+    DebugMovePiece(AppState, GameState, piece_Black_Pawn_G, G6);
+    DebugMovePiece(AppState, GameState, piece_White_Pawn_E, G6);
+    DebugMovePiece(AppState, GameState, piece_Black_King_Bishop, G7);
+    /* DebugMovePiece(AppState, GameState, piece_White_Pawn_E, H7); */
+    /* DebugMovePiece(AppState, GameState, piece_Black_King_Bishop, H6); */
 #endif
 }
 
@@ -1855,8 +1883,8 @@ internal ivec2 PositionToPawnPromotionSquarePosition(app_state *AppState, Vector
     s32 X = 0.5f * (SCREEN_WIDTH - Width) + BorderWidth;
     s32 Y = 0.5f * (SCREEN_HEIGHT - Height) + BorderWidth;
 
-    Result.X = X / SQUARE_SIZE_IN_PIXELS;
-    Result.Y = Y / SQUARE_SIZE_IN_PIXELS;
+    Result.X = (s32)(Position.x - X) / SQUARE_SIZE_IN_PIXELS;
+    Result.Y = (s32)(Position.y - Y) / SQUARE_SIZE_IN_PIXELS;
 
     if(Result.X < 0 || Result.X >= 4 || Result.Y != 0)
     {
@@ -1898,8 +1926,22 @@ internal void HandleUserInput(app_state *AppState)
     case user_input_mode_PawnPromotion:
     {
         ivec2 MouseSquarePosition = PositionToPawnPromotionSquarePosition(AppState, Ui->MousePosition);
-        Ui->HoverSquare = (ivec2){MouseSquarePosition.X, MouseSquarePosition.Y};
-        b32 OnBoard = SquareValueOnPawnPromotionPicker(Ui->HoverSquare.X, Ui->HoverSquare.Y);
+        Ui->PawnPromotionHoverSquare = (ivec2){MouseSquarePosition.X, MouseSquarePosition.Y};
+        b32 OnBoard = SquareValueOnPawnPromotionPicker(Ui->PawnPromotionHoverSquare.X, Ui->PawnPromotionHoverSquare.Y);
+
+        if (Ui->MousePrimaryDown && OnBoard)
+        {
+            Assert(Ui->PawnPromotionHoverSquare.X >= 0 && Ui->PawnPromotionHoverSquare.X < 4);
+            move_type MoveType = PawnPromotionMoveTypeLookup[Ui->PawnPromotionHoverSquare.X];
+
+            Ui->PawnPromotionSelectedSquare = Ui->PawnPromotionHoverSquare;
+
+            if (MoveType)
+            {
+                AppState->CurrentMove.Type = MoveType;
+                AppState->UserInputMode = user_input_mode_TheUsersTurn;
+            }
+        }
     } break;
     case user_input_mode_TheUsersTurn:
     default:
@@ -1973,11 +2015,11 @@ internal void Debug_PrintPieces(game_state *GameState)
         for (s32 Col = 0; Col < 8; ++Col)
         {
             s32 Index = Row * 8 + Col;
-            printf("%3d ", GameState->Piece[Index]);
+            DebugPrint("%3d ", GameState->Piece[Index]);
         }
-        printf("\n");
+        DebugPrint("\n");
     }
-    printf("\n");
+    DebugPrint("\n");
 }
 
 internal void Debug_PrintBoard(app_state *AppState)
@@ -1987,11 +2029,11 @@ internal void Debug_PrintBoard(app_state *AppState)
         for (s32 Col = 0; Col < 8; ++Col)
         {
             s32 SquareIndex = Get_Square_Index(Row, Col);
-            printf("%2d  ", AppState->Squares[SquareIndex]);
+            DebugPrint("%2d  ", AppState->Squares[SquareIndex]);
         }
-        printf("\n");
+        DebugPrint("\n");
     }
-    printf("\n");
+    DebugPrint("\n");
 }
 
 internal void LetTheBotMakeAMove(app_state *AppState)
@@ -2027,24 +2069,28 @@ internal void HandleMove(app_state *AppState)
         s32 SquareIndex = Get_Square_Index(SelectedSquare.Y, SelectedSquare.X);
         Assert(SquareIndex >= 0 && SquareIndex < 64);
 
-        move Move;
-        Move.Type = move_type_Move; /* TODO: Handle castling, and en passant. */
-        Move.Piece = AppState->Squares[SquareIndex];
-        Move.BeginSquare = Get_Square_Index(SelectedSquare.Y, SelectedSquare.X);
-        Move.EndSquare = Get_Square_Index(MoveSquare.Y, MoveSquare.X);
+        move *Move = &AppState->CurrentMove;
+        if (!Move->Type)
+        {
+            Move->Type = move_type_Move; /* TODO: Handle castling, and en passant. */
+        }
+        Move->Piece = AppState->Squares[SquareIndex];
+        Move->BeginSquare = Get_Square_Index(SelectedSquare.Y, SelectedSquare.X);
+        Move->EndSquare = Get_Square_Index(MoveSquare.Y, MoveSquare.X);
 
-        b32 MoveSquaresAreDifferent = Move.BeginSquare != Move.EndSquare;
+        b32 MoveSquaresAreDifferent = Move->BeginSquare != Move->EndSquare;
+        b32 ShouldClearHoverSelectSquares = 1;
 
-        if (Is_Valid_Square(Move.BeginSquare) && Is_Valid_Square(Move.EndSquare) && MoveSquaresAreDifferent)
+        if (Is_Valid_Square(Move->BeginSquare) && Is_Valid_Square(Move->EndSquare) && MoveSquaresAreDifferent)
         {
             /* @CopyPasta */
             b32 IsWhiteTurn = Get_Flag(TempGameState.Flags, Whose_Turn_Flag) == 0;
-            b32 IsWhitePiece = Is_White_Piece(Move.Piece);
+            b32 IsWhitePiece = Is_White_Piece(Move->Piece);
             b32 IsMoveablePiece = (IsWhitePiece && IsWhiteTurn) || !(IsWhitePiece || IsWhiteTurn);
 
-            Move.Piece = AppState->Squares[Move.BeginSquare];
+            Move->Piece = AppState->Squares[Move->BeginSquare];
 
-            if (Is_Valid_Piece(Move.Piece) && IsMoveablePiece)
+            if (Is_Valid_Piece(Move->Piece) && IsMoveablePiece)
             {
                 b32 IsEnPassantCaptureMotion = (MoveSquare.X == SelectedSquare.X + 1 ||
                                                 MoveSquare.X == SelectedSquare.X - 1);
@@ -2059,47 +2105,59 @@ internal void HandleMove(app_state *AppState)
                 s8 LastRow = IsWhiteTurn ? 7 : 0;
                 b32 PawnPromotion = 0;
 
-                if (WhiteEnPassant || BlackEnPassant)
+                Assert(Move->Piece >= 0 && Move->Piece < piece_Count);
+                if (PieceTypeTable[Move->Piece] == piece_type_Pawn &&
+                    (WhiteEnPassant || BlackEnPassant))
                 {
-                    Move.Type = move_type_EnPassant;
+                    Move->Type = move_type_EnPassant;
                 }
 
-                if (Move.Piece == piece_White_King &&
-                    Move.EndSquare == C1 &&
+                if (Move->Piece == piece_White_King &&
+                    Move->EndSquare == C1 &&
                     CanCastle(AppState, &TempGameState, 1))
                 {
-                    Move.Type = move_type_QueenCastle;
+                    Move->Type = move_type_QueenCastle;
                 }
-                else if (Move.Piece == piece_White_King &&
-                         Move.EndSquare == G1 &&
+                else if (Move->Piece == piece_White_King &&
+                         Move->EndSquare == G1 &&
                          CanCastle(AppState, &TempGameState, 0))
                 {
-                    Move.Type = move_type_KingCastle;
+                    Move->Type = move_type_KingCastle;
                 }
-                else if (Move.Piece == piece_Black_King &&
-                    Move.EndSquare == C8 &&
+                else if (Move->Piece == piece_Black_King &&
+                    Move->EndSquare == C8 &&
                     CanCastle(AppState, &TempGameState, 1))
                 {
-                    Move.Type = move_type_QueenCastle;
+                    Move->Type = move_type_QueenCastle;
                 }
-                else if (Move.Piece == piece_Black_King &&
-                         Move.EndSquare == G8 &&
+                else if (Move->Piece == piece_Black_King &&
+                         Move->EndSquare == G8 &&
                          CanCastle(AppState, &TempGameState, 0))
                 {
-                    Move.Type = move_type_KingCastle;
+                    Move->Type = move_type_KingCastle;
                 }
-                else if (PieceTypeTable[Move.Piece] == piece_type_Pawn &&
-                         MoveSquare.Y == LastRow)
+                else if (PieceTypeTable[Move->Piece] == piece_type_Pawn &&
+                         MoveSquare.Y == LastRow &&
+                         Ui->PawnPromotionSelectedSquare.X < 0)
                 {
                     PawnPromotion = 1;
-                    AppState->UserInputMode = user_input_mode_PawnPromotion;
+                    ShouldClearHoverSelectSquares = 0;
+
+                    /* TODO: When the user selects a pawn-promotion piece, this code immediately
+                       re-sets UserInputMove back to pawn promotion. Find a way to prevent that or
+                       change the way mode-changing works.
+                    */
+                    if (AppState->UserInputMode != user_input_mode_PawnPromotion)
+                    {
+                        AppState->UserInputMode = user_input_mode_PawnPromotion;
+                    }
                 }
 
                 /* Debug_PrintPieces(&TempGameState); */
 
                 if (!PawnPromotion)
                 {
-                    MakeMove(AppState, &TempGameState, Move);
+                    MakeMove(AppState, &TempGameState, *Move);
 
                     /* NOTE: @Copypasta AddPotential */
                     b32 WhiteWasInCheck = Get_Flag(TempGameState.Flags, White_In_Check_Flag);
@@ -2107,6 +2165,8 @@ internal void HandleMove(app_state *AppState)
                     Unset_Flag(TempGameState.Flags, White_In_Check_Flag | Black_In_Check_Flag);
                     b32 WhiteIsInCheck = CheckIfKingIsInCheck(AppState, &TempGameState, piece_White_King);
                     b32 BlackIsInCheck = CheckIfKingIsInCheck(AppState, &TempGameState, piece_Black_King);
+
+                    Ui->PawnPromotionSelectedSquare = (ivec2){-1, -1};
 
                     game_tree *Sibling = AppState->GameTreeCurrent->FirstChild;
 
@@ -2132,8 +2192,11 @@ internal void HandleMove(app_state *AppState)
             }
         }
 
-        Ui->SelectedSquare = (ivec2){-1,-1};
-        Ui->MoveSquare = (ivec2){-1,-1};
+        if (ShouldClearHoverSelectSquares)
+        {
+            Ui->SelectedSquare = (ivec2){-1,-1};
+            Ui->MoveSquare = (ivec2){-1,-1};
+        }
     }
 }
 
@@ -2147,6 +2210,25 @@ internal void DrawPiece(app_state *AppState, piece Piece, f32 X, f32 Y)
     Source = (Rectangle){PieceTextureOffset.X, PieceTextureOffset.Y, PIECE_TEXTURE_SIZE, PIECE_TEXTURE_SIZE};
     Dest = (Rectangle){X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS};
     DrawTexturePro(AppState->Ui.ChessPieceTexture, Source, Dest, Origin, 0.0f, Tint);
+}
+
+internal void DrawHoverOrSelectedSquare(app_state *AppState, s32 Row, s32 Col, f32 X, f32 Y)
+{
+    ui *Ui = &AppState->Ui;
+
+    if (Ui->HoverSquare.X == Col && Ui->HoverSquare.Y == Row)
+    {
+        // draw outline of square if the mouse position is inside the square
+        DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, BLACK);
+    }
+
+    if (Ui->SelectedSquare.X == Col && Ui->SelectedSquare.Y == Row)
+    {
+        Color SquareColor = UiColor[AppState->Ui.Theme][ui_color_Selected_Square];
+        Color SquareColorOutline = UiColor[AppState->Ui.Theme][ui_color_Selected_Square_Outline];
+        DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColor);
+        DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColorOutline);
+    }
 }
 
 internal void DrawBoard(app_state *AppState)
@@ -2181,19 +2263,9 @@ internal void DrawBoard(app_state *AppState)
             Color SquareColor = UiColor[AppState->Ui.Theme][SquareColorType];
 
             DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColor);
-
-            if (Ui->HoverSquare.X == Col && Ui->HoverSquare.Y == Row)
+            if (AppState->UserInputMode == user_input_mode_TheUsersTurn)
             {
-                // draw outline of square if the mouse position is inside the square
-                DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, BLACK);
-            }
-
-            if (Ui->SelectedSquare.X == Col && Ui->SelectedSquare.Y == Row)
-            {
-                Color SquareColor = UiColor[AppState->Ui.Theme][ui_color_Selected_Square];
-                Color SquareColorOutline = UiColor[AppState->Ui.Theme][ui_color_Selected_Square_Outline];
-                DrawRectangle(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColor);
-                DrawRectangleLines(X, Y, SQUARE_SIZE_IN_PIXELS, SQUARE_SIZE_IN_PIXELS, SquareColorOutline);
+                DrawHoverOrSelectedSquare(AppState, Row, Col, X, Y);
             }
         }
     }
@@ -2279,6 +2351,8 @@ internal void DrawPawnPromotionBoard(app_state *AppState)
     s32 BoardX = 0.5f * (SCREEN_WIDTH - BoardWidth);
     s32 BoardY = 0.5f * (SCREEN_HEIGHT - BoardHeight);
 
+    b32 WhoseTurn = Get_Flag(AppState->GameTreeCurrent->State.Flags, Whose_Turn_Flag);
+
     /* NOTE: Alpha curtain */
     DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, (Color){0, 0, 0, 100});
 
@@ -2298,6 +2372,8 @@ internal void DrawPawnPromotionBoard(app_state *AppState)
         Color SquareColor = UiColor[AppState->Ui.Theme][SquareColorType];
 
         DrawRectangle(X, Y, Width, Height, SquareColor);
+        DrawHoverOrSelectedSquare(AppState, 0, I, X, Y);
+        DrawPiece(AppState, PawnPromotionPieceLookup[I][WhoseTurn], X, Y);
     }
 }
 
@@ -2382,9 +2458,9 @@ internal void InitializeEvaluation(app_state *AppState)
         {
             for (s32 Col = 0; Col < 8; ++Col)
             {
-                printf("%.1f ", AppState->Evaluation.SquareBonus[Row * 8 + Col]);
+                DebugPrint("%.1f ", AppState->Evaluation.SquareBonus[Row * 8 + Col]);
             }
-            printf("\n");
+            DebugPrint("\n");
         }
     }
 #endif
@@ -2689,8 +2765,9 @@ int main(void)
     InitializeSquares(AppState.Squares, &AppState.GameTreeRoot.State);
     InitializeEvaluation(&AppState);
     AppState.BotTicksPerMove = 48;
+    AppState.UserInputMode = user_input_mode_TheUsersTurn;
 
-#if 0
+#if 1
     SetupForTesting(&AppState, &AppState.GameTreeRoot.State);
 #endif
 
@@ -2708,7 +2785,7 @@ int main(void)
 
     if (!IsWindowReady())
     {
-        printf("Error: Window not ready\n");
+        DebugPrint("Error: Window not ready\n");
         return 1;
     }
 
@@ -2777,8 +2854,8 @@ int main(void)
 
     CloseWindow();
 
-    printf("sizeof(app_state) %lu\n", sizeof(app_state));
-    printf("sizeof(game_tree) %lu\n", sizeof(game_tree));
+    DebugPrint("sizeof(app_state) %lu\n", sizeof(app_state));
+    DebugPrint("sizeof(game_tree) %lu\n", sizeof(game_tree));
 
     return 0;
 }
