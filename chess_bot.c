@@ -4,7 +4,6 @@
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
-        TODO: Evaluate the ChildScoreAverage value for a game_tree's list of children.
 
     GUI:
         ...
@@ -393,7 +392,8 @@ struct game_tree
 
     game_state State;
     f32 Score;
-    f32 ChildScoreAverage;
+    f32 WorstFollowingMoveScore;
+    s32 ChildScoreCount;
 };
 
 typedef struct
@@ -972,7 +972,7 @@ internal b32 CanCastle(app_state *AppState, game_state *GameState, b32 QueenSide
     return CanCastle;
 }
 
-internal void ClearTraverals(app_state *AppState)
+internal void ClearTraversals(app_state *AppState)
 {
     for (u64 I = 0; I < ArrayCount(AppState->TraversalNodes); ++I)
     {
@@ -1029,7 +1029,7 @@ internal s32 Debug_WalkGameTreeAndReturnCount_(app_state *AppState, game_tree *G
     s32 Count = 0;
     game_tree *CurrentNode = GameTree;
 
-    ClearTraverals(AppState);
+    ClearTraversals(AppState);
 
     while (CurrentNode)
     {
@@ -1081,6 +1081,19 @@ internal s32 Debug_CheckTheCountsOfTheTrees_(app_state *AppState)
     return FreeTreeCount;
 }
 
+internal void ZeroGameTree(game_tree *GameTree)
+{
+    GameTree->Parent = 0;
+    GameTree->FirstChild = 0;
+    GameTree->NextSibling = 0;
+    GameTree->PreviousSibling = 0;
+    GameTree->Score = 0.0f;
+    GameTree->WorstFollowingMoveScore = 0.0f;
+    GameTree->ChildScoreCount = 0;
+
+    ZeroGameState(&GameTree->State);
+}
+
 internal game_tree *CreateGameTree(app_state *AppState)
 {
     game_tree *NewGameTree = AppState->FreeGameTree;
@@ -1107,11 +1120,7 @@ internal game_tree *CreateGameTree(app_state *AppState)
             AppState->FreeGameTree = NewGameTree->NextSibling;
         }
 
-        NewGameTree->Parent = 0;
-        NewGameTree->FirstChild = 0;
-        NewGameTree->NextSibling = 0;
-        NewGameTree->PreviousSibling = 0;
-        ZeroGameState(&NewGameTree->State);
+        ZeroGameTree(NewGameTree);
     }
     else if (AppState->GameTreeNodePoolIndex < Game_Tree_Node_Pool_Size)
     {
@@ -1128,7 +1137,7 @@ internal game_tree *CreateGameTree(app_state *AppState)
 
 internal void Debug_CheckThatTreeDoesNotContainNode(app_state *AppState, game_tree *RootNode, game_tree *TestNode)
 {
-    ClearTraverals(AppState);
+    ClearTraversals(AppState);
 
     game_tree *CurrentNode = RootNode;
 
@@ -1270,7 +1279,8 @@ internal f32 GetGameStateScore(app_state *AppState, game_state *GameState)
         {
             f32 PieceValue = PieceValueTable[PieceType];
             f32 Bonus = AppState->Evaluation.SquareBonus[Square];
-            f32 PieceScore = PieceValue * Bonus;
+            /* f32 PieceScore = PieceValue * Bonus; */
+            f32 PieceScore = PieceValue + Bonus;
 
             if (I < 16)
             {
@@ -1316,6 +1326,45 @@ internal void Debug_PrintBoard(app_state *AppState)
         DebugPrint("\n");
     }
     DebugPrint("\n");
+}
+
+internal b32 CheckIfCurrentIsBestScore(app_state *AppState, f32 PreviousScore, f32 CurrentScore)
+{
+    b32 CurrentIsBest;
+    b32 BotIsWhite = Get_Flag(AppState->Flags, app_state_flags_IsBotPlayingAsWhite);
+
+    if (BotIsWhite)
+    {
+        CurrentIsBest = CurrentScore > PreviousScore;
+    }
+    else
+    {
+        CurrentIsBest = PreviousScore > CurrentScore;
+    }
+
+    return CurrentIsBest;
+}
+
+internal void SetGameTreeScore(app_state *AppState, game_tree *GameTree)
+{
+    GameTree->Score = GetGameStateScore(AppState, &GameTree->State);
+
+    if (AppState->GameTreeCurrent->ChildScoreCount == 0)
+    {
+        AppState->GameTreeCurrent->WorstFollowingMoveScore = GameTree->Score;
+    }
+    else if (GameTree->Parent)
+    {
+        f32 ParentScore = GameTree->Parent->Score;
+        b32 CurrentIsBest = CheckIfCurrentIsBestScore(AppState, ParentScore, GameTree->Score);
+
+        if (!CurrentIsBest)
+        {
+            AppState->GameTreeCurrent->WorstFollowingMoveScore = GameTree->Score;
+        }
+    }
+
+    AppState->GameTreeCurrent->ChildScoreCount += 1;
 }
 
 internal void AddPotential(app_state *AppState, game_state *GameState, piece Piece, square EndSquare, move_type MoveType)
@@ -1382,7 +1431,7 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
         AppState->GameTreeCurrent->FirstChild = GameTree;
         GameTree->Parent = AppState->GameTreeCurrent;
 
-        GameTree->Score = GetGameStateScore(AppState, &NewGameState);
+        SetGameTreeScore(AppState, GameTree);
 
         AppState->CurrentMove.Type = 0;
         AppState->CurrentMove.Piece = 0;
@@ -1672,6 +1721,7 @@ internal void LookCastle(app_state *AppState, game_state *GameState, piece Piece
 internal void GeneratePotentials(app_state *AppState, game_state *GameState)
 {
     Assert(AppState->GameTreeCurrent != 0);
+    game_tree *GameTreeCurrent = AppState->GameTreeCurrent;
     s32 Start;
 
     if (Is_White_Turn(GameState))
@@ -1753,13 +1803,20 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
         }
     }
 
-    if (AppState->GameTreeCurrent->FirstChild == 0)
+    if (GameTreeCurrent->ChildScoreCount > 0)
+    {
+        GameTreeCurrent->WorstFollowingMoveScore =
+            (GameTreeCurrent->WorstFollowingMoveScore /
+             GameTreeCurrent->ChildScoreCount);
+    }
+
+    if (GameTreeCurrent->FirstChild == 0)
     {
         /* NOTE: We generated potentials for the current game tree, and at this
            point, there are no children for the game tree. We assume this means
            the game is over.
         */
-        Set_Flag(AppState->GameTreeCurrent->State.Flags, Game_Over_Flag);
+        Set_Flag(GameTreeCurrent->State.Flags, Game_Over_Flag);
     }
 }
 
@@ -2081,6 +2138,7 @@ internal void Debug_PrintPieces(game_state *GameState)
 
 internal void LetTheBotMakeAMove(app_state *AppState)
 {
+    static s32 f = 0; printf("bot moving...%d \n", f++);
     game_tree *TheBotsChosenGameState = AppState->GameTreeCurrent->FirstChild;
     if (AppState->BotMoveTick >= AppState->BotTicksPerMove)
     {
@@ -2352,10 +2410,13 @@ internal void DrawBoard(app_state *AppState)
 
     { /* NOTE: Draw score. */
         char Buff[128];
-        sprintf(Buff, "%.4f", AppState->GameTreeCurrent->Score);
         Color Color = UiColor[AppState->Ui.Theme][ui_color_TextPrimary];
 
+        sprintf(Buff, "%.4f", AppState->GameTreeCurrent->Score);
         DrawText(Buff, 4.0f, 4.0f, 16.0f, Color);
+
+        sprintf(Buff, "%.4f", AppState->GameTreeCurrent->WorstFollowingMoveScore);
+        DrawText(Buff, 4.0f, 22.0f, 16.0f, Color);
     }
 
     { /* NOTE: Debug display if a player is in check/mate. */
@@ -2363,7 +2424,7 @@ internal void DrawBoard(app_state *AppState)
         {
             b32 IsWhiteTurn = Is_White_Turn(&CurrentState);
             char *Message = IsWhiteTurn ? "Black Wins!" : "White Wins!";
-            DrawText(Message, 8, 20, 18, (Color){180,20,20,255});
+            DrawText(Message, 80, 20, 18, (Color){180,20,20,255});
         }
         else
         {
@@ -2380,7 +2441,7 @@ internal void DrawBoard(app_state *AppState)
                 char Buff[256];
                 char *FormatString = WhiteIsInCheck ? "White in check %d" : "Black in check %d";
                 sprintf(Buff, FormatString, CurrentState.DebugCheckPiece);
-                DrawText(Buff, 8, 20, 18, (Color){180,20,20,255});
+                DrawText(Buff, 80, 2, 18, (Color){180,20,20,255});
             }
         }
     }
@@ -2477,7 +2538,8 @@ internal void DrawGameTree(app_state *AppState)
 
 internal void InitializeEvaluation(app_state *AppState)
 {
-    f32 CenterRings[4] = {0.9f, 1.0f, 1.1f, 1.2f};
+    /* f32 CenterRings[4] = {0.9f, 1.0f, 1.1f, 1.2f}; */
+    f32 CenterRings[4] = {0.0f, 0.1f, 0.2f, 0.3f};
 
     /* NOTE: Fill out square bonuses based on distance from center. Closer to center means better. */
     for (s32 I = 0; I < 4; ++I)
@@ -2544,6 +2606,13 @@ internal void SwapGameTreeSiblings(game_tree *NodeA, game_tree *NodeB)
     }
 }
 
+internal f32 GetGameTreeAdjustedScore(game_tree *GameTree)
+{
+    /* f32 Score = 0.5f * (GameTree->Score + GameTree->WorstFollowingMoveScore); */
+    f32 Score = GameTree->WorstFollowingMoveScore;
+    return Score;
+}
+
 internal void IncrementallySortGameTree(app_state *AppState)
 {
     ryn_BEGIN_TIMED_BLOCK(timed_block_IncrementallySortGameTree);
@@ -2552,7 +2621,7 @@ internal void IncrementallySortGameTree(app_state *AppState)
         return;
     }
 
-    ClearTraverals(AppState);
+    ClearTraversals(AppState);
 
     game_tree *CurrentNode = AppState->GameTreeRoot.FirstChild;
     u32 DebugCount = 0;
@@ -2590,22 +2659,12 @@ internal void IncrementallySortGameTree(app_state *AppState)
 
         if (ShouldSwap && SwapNode && SwapNode->PreviousSibling)
         {
-            f32 PreviousScore = SwapNode->PreviousSibling->Score;
-            f32 CurrentScore = SwapNode->Score;
+            f32 PreviousScore = GetGameTreeAdjustedScore(SwapNode->PreviousSibling);
+            f32 CurrentScore = GetGameTreeAdjustedScore(SwapNode);
 
-            b32 BotIsWhite = Get_Flag(AppState->Flags, app_state_flags_IsBotPlayingAsWhite);
+            b32 CurrentIsBest = CheckIfCurrentIsBestScore(AppState, PreviousScore, CurrentScore);
 
-            b32 ShouldActuallySwap;
-            if (BotIsWhite)
-            {
-                ShouldActuallySwap = CurrentScore > PreviousScore;
-            }
-            else
-            {
-                ShouldActuallySwap = PreviousScore > CurrentScore;
-            }
-
-            if (ShouldActuallySwap)
+            if (CurrentIsBest)
             {
                 SwapGameTreeSiblings(SwapNode->PreviousSibling, SwapNode);
             }
@@ -2626,7 +2685,7 @@ internal void UpdateDisplayNodes(app_state *AppState)
     f32 NodeSizePlusPadding = AppState->Ui.GameTreeNodeSize + AppState->Ui.GameTreeNodePadding;
     game_tree *CurrentNode = &AppState->GameTreeRoot;
 
-    ClearTraverals(AppState);
+    ClearTraversals(AppState);
     ClearDisplayNodes(AppState);
     s32 DebugCount = -1; /* NOTE: Start at -1 because we don't want to count AppState->GameTreeRoot. */
 
@@ -2754,7 +2813,7 @@ internal void DebugDrawFreeTreeCount(app_state *AppState)
     game_tree *CurrentNode = AppState->FreeGameTree;
     s32 Count = 0;
 
-    ClearTraverals(AppState);
+    ClearTraversals(AppState);
 
     while (CurrentNode)
     {
@@ -2825,7 +2884,7 @@ int main(void)
 
     AppState.GameTreeCurrent = &AppState.GameTreeRoot;
     GenerateAllPotentials(&AppState);
-    ClearTraverals(&AppState);
+    ClearTraversals(&AppState);
     AppState.GameTreeCurrent = &AppState.GameTreeRoot;
 
     AppState.DisplayNodeCameraPosition = (Vector2){30.0f, 30.0f};
