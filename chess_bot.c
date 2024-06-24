@@ -1,6 +1,6 @@
 /*
     BUGS:
-        ...
+        TODO: A promoted pawn continues to allow promotion when on the back row, we need to check pawn-promotion of pawns before allowing more promotion moves.
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
@@ -458,6 +458,7 @@ typedef struct
     game_tree GameTreeRoot; /* TODO: Make GameTreeRoot a pointer and allocate it from the same pool as GameTreeCurrent and FreeGameTree. */
     game_tree *GameTreeCurrent;
     game_tree *FreeGameTree;
+    game_tree *SortGameTree;
 
     ui Ui;
     user_input_mode UserInputMode;
@@ -471,6 +472,7 @@ typedef struct
     Vector2 DisplayNodeCameraPosition;
 
     traversal_node TraversalNodes[Game_Tree_Node_Pool_Size];
+    traversal_node SortTraversal[Game_Tree_Node_Pool_Size];
 
     evaluation Evaluation;
 
@@ -972,11 +974,11 @@ internal b32 CanCastle(app_state *AppState, game_state *GameState, b32 QueenSide
     return CanCastle;
 }
 
-internal void ClearTraversals(app_state *AppState)
+internal void ClearTraversals(app_state *AppState, traversal_node *TraversalNodes)
 {
-    for (u64 I = 0; I < ArrayCount(AppState->TraversalNodes); ++I)
+    for (u64 I = 0; I < Game_Tree_Node_Pool_Size; ++I)
     {
-        AppState->TraversalNodes[I].Visited = 0;
+        TraversalNodes[I].Visited = 0;
     }
 }
 
@@ -987,14 +989,14 @@ internal s32 GetGameTreeIndexFromPointer(app_state *AppState, game_tree *GameTre
     return Index;
 }
 
-internal traversal_result TraverseFirstChild(app_state *AppState, game_tree *GameTree)
+internal traversal_result TraverseFirstChild(app_state *AppState, traversal_node *TraversalNodes, game_tree *GameTree)
 {
     traversal_result Result = {0};
     Result.GameTreeIndex = GetGameTreeIndexFromPointer(AppState, GameTree->FirstChild);
 
     if (Result.GameTreeIndex >= 0 && Result.GameTreeIndex < Game_Tree_Node_Pool_Size)
     {
-        traversal_node *TraversalNode = AppState->TraversalNodes + Result.GameTreeIndex;
+        traversal_node *TraversalNode = TraversalNodes + Result.GameTreeIndex;
 
         if (!TraversalNode->Visited)
         {
@@ -1029,13 +1031,13 @@ internal s32 Debug_WalkGameTreeAndReturnCount_(app_state *AppState, game_tree *G
     s32 Count = 0;
     game_tree *CurrentNode = GameTree;
 
-    ClearTraversals(AppState);
+    ClearTraversals(AppState, AppState->TraversalNodes);
 
     while (CurrentNode)
     {
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
 
-        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, CurrentNode);
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, AppState->TraversalNodes, CurrentNode);
         traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, CurrentNode);
 
         if (FirstChildTraversal.GameTree)
@@ -1137,7 +1139,7 @@ internal game_tree *CreateGameTree(app_state *AppState)
 
 internal void Debug_CheckThatTreeDoesNotContainNode(app_state *AppState, game_tree *RootNode, game_tree *TestNode)
 {
-    ClearTraversals(AppState);
+    ClearTraversals(AppState, AppState->TraversalNodes);
 
     game_tree *CurrentNode = RootNode;
 
@@ -1145,7 +1147,7 @@ internal void Debug_CheckThatTreeDoesNotContainNode(app_state *AppState, game_tr
     {
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
 
-        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, CurrentNode);
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, AppState->TraversalNodes, CurrentNode);
         traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, CurrentNode);
 
         if (FirstChildTraversal.GameTree)
@@ -2138,7 +2140,6 @@ internal void Debug_PrintPieces(game_state *GameState)
 
 internal void LetTheBotMakeAMove(app_state *AppState)
 {
-    static s32 f = 0; printf("bot moving...%d \n", f++);
     game_tree *TheBotsChosenGameState = AppState->GameTreeCurrent->FirstChild;
     if (AppState->BotMoveTick >= AppState->BotTicksPerMove)
     {
@@ -2621,40 +2622,43 @@ internal void IncrementallySortGameTree(app_state *AppState)
         return;
     }
 
-    ClearTraversals(AppState);
+    ClearTraversals(AppState, AppState->SortTraversal);
+    if (!AppState->SortGameTree)
+    {
+        AppState->SortGameTree = AppState->GameTreeRoot.FirstChild;
+    }
 
-    game_tree *CurrentNode = AppState->GameTreeRoot.FirstChild;
     u32 DebugCount = 0;
 
-    while (CurrentNode)
+    while (AppState->SortGameTree)
     {
         s32 FirstChildIndex = 0;
         s32 NextSiblingIndex = 0;
-        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
+        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, AppState->SortGameTree);
 
-        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, CurrentNode);
-        traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, CurrentNode);
-        game_tree *SwapNode = CurrentNode;
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, AppState->SortTraversal, AppState->SortGameTree);
+        traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, AppState->SortGameTree);
+        game_tree *SwapNode = AppState->SortGameTree;
 
         b32 ShouldSwap = 0;
 
         if (FirstChildTraversal.GameTree)
         {
-            CurrentNode = CurrentNode->FirstChild;
+            AppState->SortGameTree = AppState->SortGameTree->FirstChild;
             DebugCount += 1;
         }
         else if (NextSiblingTraversal.GameTree)
         {
             ShouldSwap = 1;
-            CurrentNode = CurrentNode->NextSibling;
-            AppState->TraversalNodes[CurrentNodeIndex].Visited = 1; /* TODO: The visited value should probably be set by TraverseFirstChild/NextSibling */
+            AppState->SortGameTree = AppState->SortGameTree->NextSibling;
+            AppState->SortTraversal[CurrentNodeIndex].Visited = 1; /* TODO: The visited value should probably be set by TraverseFirstChild/NextSibling */
             DebugCount += 1;
         }
         else
         {
             ShouldSwap = 1;
-            CurrentNode = CurrentNode->Parent;
-            AppState->TraversalNodes[CurrentNodeIndex].Visited = 1;
+            AppState->SortGameTree = AppState->SortGameTree->Parent;
+            AppState->SortTraversal[CurrentNodeIndex].Visited = 1;
         }
 
         if (ShouldSwap && SwapNode && SwapNode->PreviousSibling)
@@ -2685,7 +2689,7 @@ internal void UpdateDisplayNodes(app_state *AppState)
     f32 NodeSizePlusPadding = AppState->Ui.GameTreeNodeSize + AppState->Ui.GameTreeNodePadding;
     game_tree *CurrentNode = &AppState->GameTreeRoot;
 
-    ClearTraversals(AppState);
+    ClearTraversals(AppState, AppState->TraversalNodes);
     ClearDisplayNodes(AppState);
     s32 DebugCount = -1; /* NOTE: Start at -1 because we don't want to count AppState->GameTreeRoot. */
 
@@ -2693,7 +2697,7 @@ internal void UpdateDisplayNodes(app_state *AppState)
     {
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
 
-        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, CurrentNode);
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, AppState->TraversalNodes, CurrentNode);
         traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, CurrentNode);
 
         display_node *FirstChildDisplay = AppState->DisplayNodes + FirstChildTraversal.GameTreeIndex;
@@ -2813,7 +2817,7 @@ internal void DebugDrawFreeTreeCount(app_state *AppState)
     game_tree *CurrentNode = AppState->FreeGameTree;
     s32 Count = 0;
 
-    ClearTraversals(AppState);
+    ClearTraversals(AppState, AppState->TraversalNodes);
 
     while (CurrentNode)
     {
@@ -2825,7 +2829,7 @@ internal void DebugDrawFreeTreeCount(app_state *AppState)
 
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, CurrentNode);
 
-        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, CurrentNode);
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, AppState->TraversalNodes, CurrentNode);
         traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, CurrentNode);
 
         if (FirstChildTraversal.GameTree)
@@ -2884,7 +2888,7 @@ int main(void)
 
     AppState.GameTreeCurrent = &AppState.GameTreeRoot;
     GenerateAllPotentials(&AppState);
-    ClearTraversals(&AppState);
+    ClearTraversals(&AppState, AppState.TraversalNodes);
     AppState.GameTreeCurrent = &AppState.GameTreeRoot;
 
     AppState.DisplayNodeCameraPosition = (Vector2){30.0f, 30.0f};
