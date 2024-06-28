@@ -1,6 +1,7 @@
 /*
     BUGS:
         TODO: A promoted pawn continues to allow promotion when on the back row, we need to check pawn-promotion of pawns before allowing more promotion moves.
+        TODO: There's a bug that involves playing a game and putting the bot (as black pieces) in check a bunch... then one of the moves, there are no pawn moves available... there's an image in ~/Desktop/ that shows the game state.
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
@@ -9,6 +10,7 @@
         ...
 
     Dev Features:
+        TODO: Add a move history to games, so that we can replay games or print out the moves to a buggy game-state in order to reproduce the bug.
         TODO: Should we create an iterator for game_trees?
 
     Code Quality:
@@ -523,6 +525,22 @@ internal Vector2 SubtractV2(Vector2 A, Vector2 B)
 internal Vector2 MultiplySV2(f32 S, Vector2 V)
 {
     Vector2 Result = (Vector2){ S * V.x, S * V.y };
+
+    return Result;
+}
+
+internal f32 ClampF32(f32 Value, f32 Min, f32 Max)
+{
+    f32 Result = Value;
+
+    if (Value < Min)
+    {
+        Result = Min;
+    }
+    else if (Value > Max)
+    {
+        Result = Max;
+    }
 
     return Result;
 }
@@ -2510,12 +2528,12 @@ internal void DrawGameTree(app_state *AppState)
         DrawCircle(Position.x, Position.y, Size, NodeColor);
     }
 
-    game_tree *CurrentNode = AppState->GameTreeRoot.FirstChild;
-
     for (s32 I = 0; I < Game_Tree_Node_Pool_Size; ++I)
     {
         ryn_BEGIN_TIMED_BLOCK(timed_block_TestingSomethingHere);
         display_node DisplayNode = AppState->DisplayNodes[I];
+        game_tree *GameTree = AppState->GameTreeNodePool + I;
+        b32 IsCurrentGameTree = GameTree == AppState->GameTreeCurrent;
 
         if (DisplayNode.Visible)
         {
@@ -2527,7 +2545,16 @@ internal void DrawGameTree(app_state *AppState)
             if (PositionIsInBounds)
             {
                 b32 IsCurrentNode = (AppState->GameTreeNodePool + I) == AppState->GameTreeCurrent;
-                Color NodeColor = IsCurrentNode ? ActiveColor : InactiveColor;
+                f32 ScoreRange = 10.0f;
+                f32 ClampedGameStateScore = ClampF32(GameTree->Score, -ScoreRange, ScoreRange);
+                f32 NodeColorValue = 255.0f * (ClampedGameStateScore + ScoreRange) / (2.0f * ScoreRange);
+                Color NodeColor = {NodeColorValue, NodeColorValue, NodeColorValue, 255};
+
+                if (IsCurrentGameTree)
+                {
+                    /* NOTE: Draw an outline around the current game-tree. */
+                    DrawCircle(Position.x, Position.y, Size + 2.0f, (Color){20, 100, 160, 255});
+                }
 
                 DrawCircle(Position.x, Position.y, Size, NodeColor);
             }
@@ -2622,15 +2649,16 @@ internal void IncrementallySortGameTree(app_state *AppState)
         return;
     }
 
-    ClearTraversals(AppState, AppState->SortTraversal);
     if (!AppState->SortGameTree)
     {
         AppState->SortGameTree = AppState->GameTreeRoot.FirstChild;
+        ClearTraversals(AppState, AppState->SortTraversal);
     }
 
-    u32 DebugCount = 0;
+    s32 MaxTraversalCount = 1024;
+    s32 TraversalCount = 0;
 
-    while (AppState->SortGameTree)
+    while (AppState->SortGameTree && TraversalCount < MaxTraversalCount)
     {
         s32 FirstChildIndex = 0;
         s32 NextSiblingIndex = 0;
@@ -2645,14 +2673,14 @@ internal void IncrementallySortGameTree(app_state *AppState)
         if (FirstChildTraversal.GameTree)
         {
             AppState->SortGameTree = AppState->SortGameTree->FirstChild;
-            DebugCount += 1;
+            TraversalCount += 1;
         }
         else if (NextSiblingTraversal.GameTree)
         {
             ShouldSwap = 1;
             AppState->SortGameTree = AppState->SortGameTree->NextSibling;
             AppState->SortTraversal[CurrentNodeIndex].Visited = 1; /* TODO: The visited value should probably be set by TraverseFirstChild/NextSibling */
-            DebugCount += 1;
+            TraversalCount += 1;
         }
         else
         {
@@ -2675,9 +2703,11 @@ internal void IncrementallySortGameTree(app_state *AppState)
         }
     }
     ryn_END_TIMED_BLOCK(timed_block_IncrementallySortGameTree);
+
+    /* for (s32 I = 0; I < Game_Tree_Node_Pool_Size; ++I) printf("%d", AppState->SortTraversal[I].Visited); printf("\n\n"); */
     { /* TODO: delete this debug code */
         char Buff[64];
-        sprintf(Buff, "Sort count %d", DebugCount);
+        sprintf(Buff, "Sort count %d", TraversalCount);
         DrawText(Buff, SCREEN_WIDTH - 190, 2, 18, (Color){0,0,0,255});
     }
 }
