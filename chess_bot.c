@@ -10,7 +10,7 @@
         ...
 
     Dev Features:
-        TODO: Add a move history to games, so that we can replay games or print out the moves to a buggy game-state in order to reproduce the bug.
+        DOING: Add a move history to games, so that we can replay games or print out the moves to a buggy game-state in order to reproduce the bug.
         TODO: Should we create an iterator for game_trees?
 
     Code Quality:
@@ -455,12 +455,21 @@ typedef struct /* TODO: Return a traversal_result when you call Traverse* functi
     s32 GameTreeIndex;
 } traversal_result;
 
+#define Move_History_Size 256
+typedef struct
+{
+    s32 Index;
+    move Moves[Move_History_Size];
+} move_history;
+
 typedef struct
 {
     game_tree GameTreeRoot; /* TODO: Make GameTreeRoot a pointer and allocate it from the same pool as GameTreeCurrent and FreeGameTree. */
     game_tree *GameTreeCurrent;
     game_tree *FreeGameTree;
     game_tree *SortGameTree;
+
+    move_history MoveHistory;
 
     ui Ui;
     user_input_mode UserInputMode;
@@ -1212,6 +1221,16 @@ internal void SpliceGameTree(game_tree *GameTree)
     GameTree->PreviousSibling = 0;
 }
 
+internal void AddMoveToHistory(app_state *AppState, move Move)
+{
+    s32 *HistoryIndex = &AppState->MoveHistory.Index;
+    Assert(*HistoryIndex >= 0 && *HistoryIndex < Move_History_Size);
+
+    AppState->MoveHistory.Moves[*HistoryIndex] = Move;
+
+    *HistoryIndex = (*HistoryIndex + 1) % Move_History_Size;
+}
+
 internal void MakeGameTreeTheRoot(app_state *AppState, game_tree *NewRoot)
 {
     if (NewRoot == 0)
@@ -1255,6 +1274,7 @@ internal void MakeGameTreeTheRoot(app_state *AppState, game_tree *NewRoot)
     AppState->GameTreeRoot.FirstChild = NewRoot;
     NewRoot->Parent = &AppState->GameTreeRoot;
     AppState->GameTreeCurrent = NewRoot;
+    AddMoveToHistory(AppState, NewRoot->State.LastMove);
 }
 
 internal b32 CheckIfGameStatesAreEqual(game_state *StateA, game_state *StateB)
@@ -2039,100 +2059,17 @@ internal int IVec2Equal(ivec2 A, ivec2 B)
     return A.X == B.X && A.Y == B.Y;
 }
 
-global_variable b32 GlobalShowDebugPanel = 0;
-
-internal void HandleUserInput(app_state *AppState)
+internal ivec2 RowColFromSquare(square Square)
 {
-    ui *Ui = &AppState->Ui;
-    Ui->MousePosition = GetMousePosition();
-    Ui->MousePrimaryDown = IsMouseButtonPressed(0);
+    ivec2 Result;
 
-    switch (AppState->UserInputMode)
-    {
-    case user_input_mode_TheBotsTurn:
-    {
-    } break;
-    case user_input_mode_PawnPromotion:
-    {
-        ivec2 MouseSquarePosition = PositionToPawnPromotionSquarePosition(AppState, Ui->MousePosition);
-        Ui->PawnPromotionHoverSquare = (ivec2){MouseSquarePosition.X, MouseSquarePosition.Y};
-        b32 OnBoard = SquareValueOnPawnPromotionPicker(Ui->PawnPromotionHoverSquare.X, Ui->PawnPromotionHoverSquare.Y);
+    Result.X = Square % 8;
+    Result.Y = Square / 8;
 
-        if (Ui->MousePrimaryDown && OnBoard)
-        {
-            Assert(Ui->PawnPromotionHoverSquare.X >= 0 && Ui->PawnPromotionHoverSquare.X < 4);
-            move_type MoveType = PawnPromotionMoveTypeLookup[Ui->PawnPromotionHoverSquare.X];
-
-            Ui->PawnPromotionSelectedSquare = Ui->PawnPromotionHoverSquare;
-
-            if (MoveType)
-            {
-                AppState->CurrentMove.Type = MoveType;
-                AppState->UserInputMode = user_input_mode_TheUsersTurn;
-            }
-        }
-    } break;
-    case user_input_mode_TheUsersTurn:
-    default:
-    {
-        Vector2 MouseSquarePosition = PositionToSquarePosition(Ui->MousePosition);
-        Ui->HoverSquare = (ivec2){(int)MouseSquarePosition.x, (int)MouseSquarePosition.y};
-        b32 OnBoard = SquareValueOnBoard(Ui->HoverSquare.X, Ui->HoverSquare.Y);
-        game_tree *GameTreeCurrent = AppState->GameTreeCurrent;
-
-        if (Ui->MousePrimaryDown && OnBoard)
-        {
-            if (Ui->SelectedSquare.X == -1 && Ui->SelectedSquare.Y == -1)
-            {
-                Ui->SelectedSquare = (ivec2){Ui->HoverSquare.X, Ui->HoverSquare.Y};
-            }
-            else if (!IVec2Equal(Ui->SelectedSquare, Ui->HoverSquare))
-            {
-                Ui->MoveSquare = (ivec2){Ui->HoverSquare.X, Ui->HoverSquare.Y};
-            }
-        }
-
-        if (IsKeyPressed(KEY_SPACE))
-        {
-            Toggle_Flag(AppState->Flags, app_state_flags_DoNotLetTheBotMakeAMove);
-        }
-
-        if (IsKeyPressed(KEY_DOWN))
-        {
-            if (AppState->GameTreeCurrent->NextSibling)
-            {
-                AppState->GameTreeCurrent = AppState->GameTreeCurrent->NextSibling;
-            }
-        }
-        else if (IsKeyPressed(KEY_UP))
-        {
-            if (AppState->GameTreeCurrent->PreviousSibling)
-            {
-                AppState->GameTreeCurrent = AppState->GameTreeCurrent->PreviousSibling;
-            }
-        }
-        else if (IsKeyPressed(KEY_RIGHT))
-        {
-            if (AppState->GameTreeCurrent->FirstChild)
-            {
-                AppState->GameTreeCurrent = AppState->GameTreeCurrent->FirstChild;
-            }
-        }
-        else if (IsKeyPressed(KEY_LEFT))
-        {
-            if (AppState->GameTreeCurrent->Parent)
-            {
-                AppState->GameTreeCurrent = AppState->GameTreeCurrent->Parent;
-            }
-        }
-    } break;
-    }
-
-    if (IsKeyPressed(KEY_TAB))
-    {
-        GlobalShowDebugPanel = !GlobalShowDebugPanel;
-    }
+    return Result;
 }
+
+global_variable b32 GlobalShowDebugPanel = 0;
 
 internal void ClearDisplayNodes(app_state *AppState)
 {
@@ -2321,6 +2258,144 @@ internal void HandleMove(app_state *AppState)
             Ui->SelectedSquare = (ivec2){-1,-1};
             Ui->MoveSquare = (ivec2){-1,-1};
         }
+    }
+}
+
+internal void SaveMoveHistory(app_state *AppState)
+{
+    FILE *File = fopen("./chess_bot_save.bgs", "wb");
+
+
+    if (AppState->MoveHistory.Index > 0)
+    {
+        Assert(AppState->MoveHistory.Index < Move_History_Size);
+        fwrite(&AppState->MoveHistory, 1, sizeof(AppState->MoveHistory), File);
+    }
+
+    fclose(File);
+}
+
+internal void LoadMoveHistory(app_state *AppState)
+{
+    FILE *File = fopen("./chess_bot_save.bgs", "rb");
+
+    fread(&AppState->MoveHistory, 1, sizeof(AppState->MoveHistory), File);
+
+    if(AppState->MoveHistory.Index >= 0 && AppState->MoveHistory.Index < Move_History_Size)
+    {
+        for (s32 I = 0; I < AppState->MoveHistory.Index; ++I)
+        {
+            AppState->CurrentMove = AppState->MoveHistory.Moves[I];
+
+            AppState->Ui.SelectedSquare = RowColFromSquare(AppState->CurrentMove.BeginSquare);
+            AppState->Ui.MoveSquare = RowColFromSquare(AppState->CurrentMove.EndSquare);
+            HandleMove(AppState);
+        }
+    }
+
+    fclose(File);
+}
+
+internal void HandleUserInput(app_state *AppState)
+{
+    ui *Ui = &AppState->Ui;
+    Ui->MousePosition = GetMousePosition();
+    Ui->MousePrimaryDown = IsMouseButtonPressed(0);
+
+    switch (AppState->UserInputMode)
+    {
+    case user_input_mode_TheBotsTurn:
+    {
+    } break;
+    case user_input_mode_PawnPromotion:
+    {
+        ivec2 MouseSquarePosition = PositionToPawnPromotionSquarePosition(AppState, Ui->MousePosition);
+        Ui->PawnPromotionHoverSquare = (ivec2){MouseSquarePosition.X, MouseSquarePosition.Y};
+        b32 OnBoard = SquareValueOnPawnPromotionPicker(Ui->PawnPromotionHoverSquare.X, Ui->PawnPromotionHoverSquare.Y);
+
+        if (Ui->MousePrimaryDown && OnBoard)
+        {
+            Assert(Ui->PawnPromotionHoverSquare.X >= 0 && Ui->PawnPromotionHoverSquare.X < 4);
+            move_type MoveType = PawnPromotionMoveTypeLookup[Ui->PawnPromotionHoverSquare.X];
+
+            Ui->PawnPromotionSelectedSquare = Ui->PawnPromotionHoverSquare;
+
+            if (MoveType)
+            {
+                AppState->CurrentMove.Type = MoveType;
+                AppState->UserInputMode = user_input_mode_TheUsersTurn;
+            }
+        }
+    } break;
+    case user_input_mode_TheUsersTurn:
+    default:
+    {
+        Vector2 MouseSquarePosition = PositionToSquarePosition(Ui->MousePosition);
+        Ui->HoverSquare = (ivec2){(int)MouseSquarePosition.x, (int)MouseSquarePosition.y};
+        b32 OnBoard = SquareValueOnBoard(Ui->HoverSquare.X, Ui->HoverSquare.Y);
+        game_tree *GameTreeCurrent = AppState->GameTreeCurrent;
+
+        if (Ui->MousePrimaryDown && OnBoard)
+        {
+            if (Ui->SelectedSquare.X == -1 && Ui->SelectedSquare.Y == -1)
+            {
+                Ui->SelectedSquare = (ivec2){Ui->HoverSquare.X, Ui->HoverSquare.Y};
+            }
+            else if (!IVec2Equal(Ui->SelectedSquare, Ui->HoverSquare))
+            {
+                Ui->MoveSquare = (ivec2){Ui->HoverSquare.X, Ui->HoverSquare.Y};
+            }
+        }
+
+        if (IsKeyPressed(KEY_SPACE))
+        {
+            Toggle_Flag(AppState->Flags, app_state_flags_DoNotLetTheBotMakeAMove);
+        }
+
+        if (IsKeyPressed(KEY_DOWN))
+        {
+            if (AppState->GameTreeCurrent->NextSibling)
+            {
+                AppState->GameTreeCurrent = AppState->GameTreeCurrent->NextSibling;
+            }
+        }
+        else if (IsKeyPressed(KEY_UP))
+        {
+            if (AppState->GameTreeCurrent->PreviousSibling)
+            {
+                AppState->GameTreeCurrent = AppState->GameTreeCurrent->PreviousSibling;
+            }
+        }
+        else if (IsKeyPressed(KEY_RIGHT))
+        {
+            if (AppState->GameTreeCurrent->FirstChild)
+            {
+                AppState->GameTreeCurrent = AppState->GameTreeCurrent->FirstChild;
+            }
+        }
+        else if (IsKeyPressed(KEY_LEFT))
+        {
+            if (AppState->GameTreeCurrent->Parent)
+            {
+                AppState->GameTreeCurrent = AppState->GameTreeCurrent->Parent;
+            }
+        }
+    } break;
+    }
+
+    if (IsKeyPressed(KEY_S) && (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL)))
+    {
+        SaveMoveHistory(AppState);
+    }
+
+    if (IsKeyPressed(KEY_L) && (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL)))
+    {
+        LoadMoveHistory(AppState);
+    }
+
+    if (IsKeyPressed(KEY_TAB))
+    {
+        GlobalShowDebugPanel = !GlobalShowDebugPanel;
     }
 }
 
@@ -2704,7 +2779,6 @@ internal void IncrementallySortGameTree(app_state *AppState)
     }
     ryn_END_TIMED_BLOCK(timed_block_IncrementallySortGameTree);
 
-    /* for (s32 I = 0; I < Game_Tree_Node_Pool_Size; ++I) printf("%d", AppState->SortTraversal[I].Visited); printf("\n\n"); */
     { /* TODO: delete this debug code */
         char Buff[64];
         sprintf(Buff, "Sort count %d", TraversalCount);
