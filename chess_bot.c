@@ -395,7 +395,6 @@ struct game_tree
     game_state State;
     f32 Score;
     f32 WorstFollowingMoveScore;
-    s32 ChildScoreCount;
 };
 
 typedef struct
@@ -418,7 +417,7 @@ typedef struct
     ui_color_theme Theme;
 } ui;
 
-#define Game_Tree_Node_Pool_Size 4096 /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
+#define Game_Tree_Node_Pool_Size (4*1024) /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
 
 typedef enum
 {
@@ -1166,7 +1165,6 @@ internal void ZeroGameTree(game_tree *GameTree)
     GameTree->PreviousSibling = 0;
     GameTree->Score = 0.0f;
     GameTree->WorstFollowingMoveScore = 0.0f;
-    GameTree->ChildScoreCount = 0;
 
     ZeroGameState(&GameTree->State);
 }
@@ -1431,6 +1429,28 @@ internal void Debug_PrintBoard(app_state *AppState)
     DebugPrint("\n");
 }
 
+#if DEBUG
+#define Debug_CheckThatGameTreeDoesNotHaveGameTreeAsChild(pt, tt) Debug_CheckThatGameTreeDoesNotHaveGameTreeAsChild_((pt), (tt))
+#else
+#define Debug_CheckThatGameTreeDoesNotHaveGameTreeAsChild(...) 0
+#endif
+internal void Debug_CheckThatGameTreeDoesNotHaveGameTreeAsChild_(game_tree *ParentTree, game_tree *TestTree)
+{
+    game_tree *CurrentSibling = ParentTree->FirstChild;
+
+    for (;;)
+    {
+        if (CurrentSibling == 0)
+        {
+            break;
+        }
+
+        b32 AreEqual = CheckIfGameStatesAreEqual(&CurrentSibling->State, &TestTree->State);
+        Assert(!AreEqual);
+        CurrentSibling = CurrentSibling->NextSibling;
+    }
+}
+
 internal b32 CheckIfCurrentIsBestScore(app_state *AppState, f32 PreviousScore, f32 CurrentScore)
 {
     b32 CurrentIsBest;
@@ -1452,22 +1472,16 @@ internal void SetGameTreeScore(app_state *AppState, game_tree *GameTree)
 {
     GameTree->Score = GetGameStateScore(AppState, &GameTree->State);
 
-    if (AppState->GameTreeCurrent->ChildScoreCount == 0)
+    if (GameTree->Parent)
     {
-        AppState->GameTreeCurrent->WorstFollowingMoveScore = GameTree->Score;
-    }
-    else if (GameTree->Parent)
-    {
-        f32 ParentScore = GameTree->Parent->Score;
-        b32 CurrentIsBest = CheckIfCurrentIsBestScore(AppState, ParentScore, GameTree->Score);
+        f32 ParentWorstScore = GameTree->Parent->WorstFollowingMoveScore;
+        b32 CurrentIsBest = CheckIfCurrentIsBestScore(AppState, ParentWorstScore, GameTree->Score);
 
         if (!CurrentIsBest)
         {
-            AppState->GameTreeCurrent->WorstFollowingMoveScore = GameTree->Score;
+            GameTree->Parent->WorstFollowingMoveScore = GameTree->Score;
         }
     }
-
-    AppState->GameTreeCurrent->ChildScoreCount += 1;
 }
 
 internal void AddPotential(app_state *AppState, game_state *GameState, piece Piece, square EndSquare, move_type MoveType)
@@ -1524,6 +1538,7 @@ internal void AddPotential(app_state *AppState, game_state *GameState, piece Pie
     if (GameTree)
     {
         GameTree->State = NewGameState;
+        Debug_CheckThatGameTreeDoesNotHaveGameTreeAsChild(AppState->GameTreeCurrent, GameTree);
         GameTree->NextSibling = AppState->GameTreeCurrent->FirstChild;
 
         if (GameTree->NextSibling)
@@ -1906,126 +1921,88 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
         }
     }
 
-    if (GameTreeCurrent->ChildScoreCount > 0)
-    {
-        GameTreeCurrent->WorstFollowingMoveScore =
-            (GameTreeCurrent->WorstFollowingMoveScore /
-             GameTreeCurrent->ChildScoreCount);
-    }
-
     if (GameTreeCurrent->FirstChild == 0)
     {
         /* NOTE: We generated potentials for the current game tree, and at this
            point, there are no children for the game tree. We assume this means
            the game is over.
         */
-        Set_Flag(GameTreeCurrent->State.Flags, Game_Over_Flag);
+        /* Set_Flag(GameTreeCurrent->State.Flags, Game_Over_Flag); */
     }
 }
 
+#define MAX_DEPTH 4
+
 internal void GenerateAllPotentials(app_state *AppState)
 {
-    game_tree *OldGameTreeCurrent = AppState->GameTreeCurrent;
-    game_tree *CurrentRoot = GetRootGameTree(AppState->GenerationTraversal.CurrentNode);
+    traversal *Traversal = &AppState->GenerationTraversal;
 
-    if (AppState->GenerationTraversal.CurrentNode == 0 || CurrentRoot == AppState->FreeGameTree)
+    game_tree *OldGameTreeCurrent = AppState->GameTreeCurrent;
+    game_tree *CurrentRoot = GetRootGameTree(Traversal->CurrentNode);
+
+    s32 ProcessedNodeCount = 0;
+    s32 MaxNodesToBeProcessed = 2*1024;
+
+    if (Traversal->CurrentNode == 0 || CurrentRoot == AppState->FreeGameTree)
     {
         if (AppState->GameTreeRoot.FirstChild == 0)
         {
-            AppState->GenerationTraversal.CurrentNode = &AppState->GameTreeRoot;
+            Traversal->CurrentNode = &AppState->GameTreeRoot;
         }
         else
         {
-            AppState->GenerationTraversal.CurrentNode = AppState->GameTreeRoot.FirstChild;
+            Traversal->CurrentNode = AppState->GameTreeRoot.FirstChild;
         }
 
-        AppState->GenerationTraversal.Depth = 0;
+        Traversal->Depth = 1;
     }
 
-#if 0
-    while (AppState->GenerationTraversal.CurrentNode)
+    while (Traversal->CurrentNode && ProcessedNodeCount < MaxNodesToBeProcessed)
     {
-        if (AppState->GenerationTraversal.CurrentNode->FirstChild == 0 )
+        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, Traversal->CurrentNode);
+
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, *Traversal);
+        traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, *Traversal);
+
+        if (FirstChildTraversal.GameTree == 0 && Traversal->CurrentNode->FirstChild == 0)
         {
-            AppState->GameTreeCurrent = AppState->GenerationTraversal.CurrentNode;
+            AppState->GameTreeCurrent = Traversal->CurrentNode;
             InitializeSquares(AppState->Squares, &AppState->GameTreeCurrent->State);
             GeneratePotentials(AppState, &AppState->GameTreeCurrent->State);
 
-            if (AppState->GenerationTraversal.CurrentNode->FirstChild == 0)
+            if (!Traversal->CurrentNode->FirstChild)
             {
-                /* NOTE: We tried to generate potentials, but the node still does not have children.
-                   We could not find any new moves, which means we found a checkmate.
-                   Move on to the next sibling here...
-                */
-                AppState->GenerationTraversal.CurrentNode = AppState->GenerationTraversal.CurrentNode->NextSibling;
+                Traversal->CurrentNode = Traversal->CurrentNode->NextSibling;
+                Traversal->TraversalNodes[CurrentNodeIndex].Visited = 1; /* TODO: This is the same kind of motion as the sibling move below, and I _think_ we want to set the current node as "visited" here as well. */
             }
         }
-        else if (AppState->GenerationTraversal.CurrentNode->NextSibling != 0)
+        else if (FirstChildTraversal.GameTree && Traversal->Depth < Traversal->MaxDepth)
         {
-            Assert(AppState->GenerationTraversal.CurrentNode != AppState->GenerationTraversal.CurrentNode->NextSibling);
-            AppState->GenerationTraversal.CurrentNode = AppState->GenerationTraversal.CurrentNode->NextSibling;
-        }
-        else
-        {
-            Assert(AppState->GenerationTraversal.CurrentNode != AppState->GenerationTraversal.CurrentNode->FirstChild);
-            AppState->GenerationTraversal.CurrentNode = AppState->GenerationTraversal.CurrentNode->FirstChild;
-        }
-
-        if (!Has_Free_Game_Tree(AppState))
-        {
-            break;
-        }
-    }
-#else
-    s32 ProcessedNodeCount = 0;
-    s32 MaxNodesToBeProcessed = 64;
-
-    while (AppState->GenerationTraversal.CurrentNode && ProcessedNodeCount < MaxNodesToBeProcessed)
-    {
-        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, AppState->GenerationTraversal.CurrentNode);
-
-        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, AppState->GenerationTraversal);
-        traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, AppState->GenerationTraversal);
-
-        if (!FirstChildTraversal.GameTree)
-        {
-            AppState->GameTreeCurrent = AppState->GenerationTraversal.CurrentNode;
-            InitializeSquares(AppState->Squares, &AppState->GameTreeCurrent->State);
-            GeneratePotentials(AppState, &AppState->GameTreeCurrent->State);
-
-            if (!AppState->GenerationTraversal.CurrentNode->FirstChild)
-            {
-                AppState->GenerationTraversal.CurrentNode = AppState->GenerationTraversal.CurrentNode->NextSibling;
-            }
-        }
-        else if (FirstChildTraversal.GameTree && AppState->GenerationTraversal.Depth < AppState->GenerationTraversal.MaxDepth)
-        {
-            AppState->GenerationTraversal.CurrentNode = AppState->GenerationTraversal.CurrentNode->FirstChild;
-            AppState->GenerationTraversal.Depth += 1;
+            Traversal->CurrentNode = Traversal->CurrentNode->FirstChild;
+            Traversal->Depth += 1;
         }
         else if (NextSiblingTraversal.GameTree)
         {
-            AppState->GenerationTraversal.CurrentNode = AppState->GenerationTraversal.CurrentNode->NextSibling;
-            AppState->GenerationTraversal.TraversalNodes[CurrentNodeIndex].Visited = 1; /* TODO: The visited value should probably be set by TraverseFirstChild/NextSibling */
+            Traversal->CurrentNode = Traversal->CurrentNode->NextSibling;
+            Traversal->TraversalNodes[CurrentNodeIndex].Visited = 1; /* TODO: The visited value should probably be set by TraverseFirstChild/NextSibling */
         }
         else
         {
-            AppState->GenerationTraversal.CurrentNode = AppState->GenerationTraversal.CurrentNode->Parent;
-            AppState->GenerationTraversal.Depth = MaxS32(0, AppState->GenerationTraversal.Depth - 1);
+            Traversal->CurrentNode = Traversal->CurrentNode->Parent;
+            Traversal->Depth = MaxS32(0, Traversal->Depth - 1);
 
-            if (AppState->GenerationTraversal.Depth == 0)
+            if (Traversal->Depth == 0)
             {
-                s32 NewMaxDepth = (AppState->GenerationTraversal.MaxDepth + 1) % 3;
-                ClearTraversals(AppState, AppState->GenerationTraversal.TraversalNodes);
-                AppState->GenerationTraversal.MaxDepth = NewMaxDepth;
+                s32 NewMaxDepth = (Traversal->MaxDepth + 1) % MAX_DEPTH;
+                ClearTraversals(AppState, Traversal->TraversalNodes);
+                Traversal->MaxDepth = NewMaxDepth;
             }
 
-            AppState->GenerationTraversal.TraversalNodes[CurrentNodeIndex].Visited = 1;
+            Traversal->TraversalNodes[CurrentNodeIndex].Visited = 1;
         }
 
         ProcessedNodeCount += 1;
     }
-#endif
 
     AppState->GameTreeCurrent = OldGameTreeCurrent;
 }
@@ -2860,7 +2837,7 @@ internal void IncrementallySortGameTree(app_state *AppState)
         ClearTraversals(AppState, AppState->SortTraversal);
     }
 
-    s32 MaxTraversalCount = 1024;
+    s32 MaxTraversalCount = 2*1024;
     s32 TraversalCount = 0;
 
     while (AppState->SortGameTree && TraversalCount < MaxTraversalCount)
@@ -3119,7 +3096,7 @@ int main(void)
     InitializeGameState(&AppState.GameTreeRoot.State);
     InitializeSquares(AppState.Squares, &AppState.GameTreeRoot.State);
     InitializeEvaluation(&AppState);
-    AppState.BotTicksPerMove = 48;
+    AppState.BotTicksPerMove = 64;
     AppState.UserInputMode = user_input_mode_TheUsersTurn;
 
 #if 0
