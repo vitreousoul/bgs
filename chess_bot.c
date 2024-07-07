@@ -1,5 +1,6 @@
 /*
     BUGS:
+        TODO: At some point in some games, the scores for each game-tree node is zero, which is definitely not what we want.
         TODO: A promoted pawn continues to allow promotion when on the back row, we need to check pawn-promotion of pawns before allowing more promotion moves.
 
     Engine Functionality:
@@ -415,7 +416,7 @@ typedef struct
     ui_color_theme Theme;
 } ui;
 
-#define Game_Tree_Node_Pool_Size (4*1024) /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
+#define Game_Tree_Node_Pool_Size (6*1024) /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
 
 typedef enum
 {
@@ -2514,6 +2515,14 @@ internal void DrawPiece(app_state *AppState, piece Piece, f32 X, f32 Y)
     DrawTexturePro(AppState->Ui.ChessPieceTexture, Source, Dest, Origin, 0.0f, Tint);
 }
 
+internal f32 GetGameTreeAdjustedScore(game_tree *GameTree)
+{
+    /* f32 Score = 0.5f * (GameTree->Score + GameTree->WorstFollowingMoveScore); */
+    /* f32 Score = GameTree->Score + GameTree->WorstFollowingMoveScore; */
+    f32 Score = GameTree->WorstFollowingMoveScore;
+    return Score;
+}
+
 internal void DrawHoverOrSelectedSquare(app_state *AppState, s32 Row, s32 Col, f32 X, f32 Y)
 {
     ui *Ui = &AppState->Ui;
@@ -2611,11 +2620,8 @@ internal void DrawBoard(app_state *AppState)
             char Buff[128];
             Color Color = UiColor[AppState->Ui.Theme][ui_color_TextPrimary];
 
-            sprintf(Buff, "%.4f", AppState->GameTreeCurrent->Score);
+            sprintf(Buff, "%.4f", GetGameTreeAdjustedScore(AppState->GameTreeCurrent));
             DrawText(Buff, 4.0f, 4.0f, 16.0f, Color);
-
-            sprintf(Buff, "%.4f", AppState->GameTreeCurrent->WorstFollowingMoveScore);
-            DrawText(Buff, 4.0f, 22.0f, 16.0f, Color);
         }
 
         { /* NOTE: Debug display if a player is in check/mate. */
@@ -2725,7 +2731,8 @@ internal void DrawGameTree(app_state *AppState)
                 {
                     b32 IsCurrentNode = (AppState->GameTreeNodePool + I) == AppState->GameTreeCurrent;
                     f32 ScoreRange = 10.0f;
-                    f32 ClampedGameStateScore = ClampF32(GameTree->Score, -ScoreRange, ScoreRange);
+                    f32 Score = GetGameTreeAdjustedScore(GameTree);
+                    f32 ClampedGameStateScore = ClampF32(Score, -ScoreRange, ScoreRange);
                     f32 NodeColorValue = 255.0f * (ClampedGameStateScore + ScoreRange) / (2.0f * ScoreRange);
                     Color NodeColor = {NodeColorValue, NodeColorValue, NodeColorValue, 255};
 
@@ -2814,13 +2821,6 @@ internal void SwapGameTreeSiblings(game_tree *NodeA, game_tree *NodeB)
     }
 }
 
-internal f32 GetGameTreeAdjustedScore(game_tree *GameTree)
-{
-    /* f32 Score = 0.5f * (GameTree->Score + GameTree->WorstFollowingMoveScore); */
-    f32 Score = GameTree->WorstFollowingMoveScore;
-    return Score;
-}
-
 internal void IncrementallySortGameTree(app_state *AppState)
 {
     ryn_BEGIN_TIMED_BLOCK(timed_block_IncrementallySortGameTree);
@@ -2829,9 +2829,12 @@ internal void IncrementallySortGameTree(app_state *AppState)
         return;
     }
 
-    if (!AppState->SortGameTree)
+    game_tree *CurrentRoot = GetRootGameTree(AppState->SortGameTree);
+
+    if (CurrentRoot == AppState->FreeGameTree || !AppState->SortGameTree)
     {
         AppState->SortGameTree = AppState->GameTreeRoot.FirstChild;
+        CurrentRoot = AppState->SortGameTree;
         ClearTraversals(AppState, AppState->SortTraversal);
     }
 
@@ -2881,12 +2884,6 @@ internal void IncrementallySortGameTree(app_state *AppState)
         }
     }
     ryn_END_TIMED_BLOCK(timed_block_IncrementallySortGameTree);
-
-    { /* TODO: delete this debug code */
-        char Buff[64];
-        sprintf(Buff, "Sort count %d", TraversalCount);
-        DrawText(Buff, SCREEN_WIDTH - 190, 2, 18, (Color){0,0,0,255});
-    }
 }
 
 internal void UpdateDisplayNodes(app_state *AppState)
