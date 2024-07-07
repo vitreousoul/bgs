@@ -1,7 +1,6 @@
 /*
     BUGS:
         TODO: A promoted pawn continues to allow promotion when on the back row, we need to check pawn-promotion of pawns before allowing more promotion moves.
-        TODO: There's a bug that involves playing a game and putting the bot (as black pieces) in check a bunch... then one of the moves, there are no pawn moves available... there's an image in ~/Desktop/ that shows the game state.
 
     Engine Functionality:
         TODO: Create game_state valuing functions.
@@ -10,7 +9,6 @@
         ...
 
     Dev Features:
-        DOING: Add a move history to games, so that we can replay games or print out the moves to a buggy game-state in order to reproduce the bug.
         TODO: Should we create an iterator for game_trees?
 
     Code Quality:
