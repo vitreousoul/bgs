@@ -2173,6 +2173,8 @@ internal ivec2 RowColFromSquare(square Square)
 }
 
 global_variable b32 GlobalShowDebugPanel = 0;
+global_variable b32 GlobalDebugPanelIsPaused = 0;
+global_variable ryn_profiler DebugProfilerForPause;
 
 internal void ClearDisplayNodes(app_state *AppState)
 {
@@ -2518,8 +2520,8 @@ internal void DrawPiece(app_state *AppState, piece Piece, f32 X, f32 Y)
 internal f32 GetGameTreeAdjustedScore(game_tree *GameTree)
 {
     /* f32 Score = 0.5f * (GameTree->Score + GameTree->WorstFollowingMoveScore); */
-    /* f32 Score = GameTree->Score + GameTree->WorstFollowingMoveScore; */
-    f32 Score = GameTree->WorstFollowingMoveScore;
+    f32 Score = 0.2f*GameTree->Score + 0.8f*GameTree->WorstFollowingMoveScore;
+    /* f32 Score = GameTree->WorstFollowingMoveScore; */
     return Score;
 }
 
@@ -2841,6 +2843,8 @@ internal void IncrementallySortGameTree(app_state *AppState)
     s32 MaxTraversalCount = 2*1024;
     s32 TraversalCount = 0;
 
+    s32 DebugCount = 0;
+
     while (AppState->SortGameTree && TraversalCount < MaxTraversalCount)
     {
         s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, AppState->SortGameTree);
@@ -2882,6 +2886,12 @@ internal void IncrementallySortGameTree(app_state *AppState)
                 SwapGameTreeSiblings(SwapNode->PreviousSibling, SwapNode);
             }
         }
+    }
+
+    { /* TODO: delete this debug code */
+        char Buff[64];
+        sprintf(Buff, "Sort count %d", TraversalCount);
+        DrawText(Buff, SCREEN_WIDTH - 190, 4, 18, (Color){0,0,0,255});
     }
     ryn_END_TIMED_BLOCK(timed_block_IncrementallySortGameTree);
 }
@@ -2960,7 +2970,9 @@ internal void DebugDrawProfile(void)
     f32 FontSize = 16.0;
     f32 LineHeight = FontSize + 4.0f;
 
-    uint64_t TotalElapsedTime = ryn_GlobalProfiler.EndTime - ryn_GlobalProfiler.StartTime;
+    ryn_profiler Profiler = GlobalDebugPanelIsPaused ? DebugProfilerForPause : ryn_GlobalProfiler;
+
+    uint64_t TotalElapsedTime = Profiler.EndTime - Profiler.StartTime;
 
     DrawRectangle(0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT, (Color){0, 0, 0, 100});
 
@@ -2972,9 +2984,9 @@ internal void DebugDrawProfile(void)
         TextPosition.y += LineHeight;
     }
 
-    for(uint32_t TimerIndex = 0; TimerIndex < ArrayCount(ryn_GlobalProfiler.Timers); ++TimerIndex)
+    for(uint32_t TimerIndex = 0; TimerIndex < ArrayCount(Profiler.Timers); ++TimerIndex)
     {
-        ryn_timer_data *Timer = ryn_GlobalProfiler.Timers + TimerIndex;
+        ryn_timer_data *Timer = Profiler.Timers + TimerIndex;
         if(Timer->ElapsedInclusive)
         {
             double Megabyte = 1024.0f*1024.0f;
@@ -3116,6 +3128,8 @@ int main(void)
         return 1;
     }
 
+    b32 ShouldCopyDebugProfilerForPause = 0;
+
     while (!WindowShouldClose())
     {
         ryn_BeginProfile();
@@ -3125,13 +3139,28 @@ int main(void)
 
         ryn_BEGIN_TIMED_BLOCK(timed_block_HandleInputAndMove);
         HandleUserInput(&AppState);
-        if (!Get_Flag(AppState.Flags, app_state_flags_DoNotLetTheBotMakeAMove) && IsTheBotsTurn)
+        if (GlobalShowDebugPanel)
         {
-            LetTheBotMakeAMove(&AppState);
+            if (IsKeyPressed(KEY_P))
+            {
+                GlobalDebugPanelIsPaused = !GlobalDebugPanelIsPaused;
+
+                if (GlobalDebugPanelIsPaused)
+                {
+                    ShouldCopyDebugProfilerForPause = 1;
+                }
+            }
         }
         else
         {
-            HandleMove(&AppState);
+            if (!Get_Flag(AppState.Flags, app_state_flags_DoNotLetTheBotMakeAMove) && IsTheBotsTurn)
+            {
+                LetTheBotMakeAMove(&AppState);
+            }
+            else
+            {
+                HandleMove(&AppState);
+            }
         }
         ryn_END_TIMED_BLOCK(timed_block_HandleInputAndMove);
 
@@ -3166,6 +3195,12 @@ int main(void)
         if (GlobalShowDebugPanel)
         {
             DebugDrawProfile();
+
+            if (ShouldCopyDebugProfilerForPause)
+            {
+                DebugProfilerForPause = ryn_GlobalProfiler;
+                ShouldCopyDebugProfilerForPause = 0;
+            }
         }
         { /* NOTE: Clear profile timers. */
             for(uint32_t TimerIndex = 0; TimerIndex < ArrayCount(ryn_GlobalProfiler.Timers); ++TimerIndex)
