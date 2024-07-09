@@ -4,6 +4,8 @@
         TODO: A promoted pawn continues to allow promotion when on the back row, we need to check pawn-promotion of pawns before allowing more promotion moves.
 
     Engine Functionality:
+        TODO: Instead of searching to see if a traversal is still in the active game-tree, maybe we should reset all traversals when a move is made (when we make a new game-tree the root).
+        TODO: Make UpdateDisplayNodes incremental (this should hopefully help with performance).
         TODO: Create game_state valuing functions.
 
     GUI:
@@ -13,7 +15,7 @@
         TODO: Should we create an iterator for game_trees?
 
     Code Quality:
-        TODO: AddPotential and HandleMove have a lot of similarities and have been a source of implementation pains. Maybe we should put these two functions side-by-side and see if they can be combined.
+        TODO: AddPotential and HandleMove have (or at least _used_ to have) a lot of similarities and have been a source of implementation pains. Maybe we should put these two functions side-by-side and see if they can be combined.
 */
 #include <stdio.h>
 #include <stdint.h>
