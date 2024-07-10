@@ -44,6 +44,7 @@ typedef enum
 #define f32  float
 
 #define global_variable  static
+#define debug_variable  static
 #define internal         static
 
 #define ArrayCount(a) (sizeof(a) / sizeof((a)[0]))
@@ -461,7 +462,7 @@ typedef struct
     s32 Depth;
     s32 MaxDepth;
     game_tree *CurrentNode;
-    traversal_node TraversalNodes[Game_Tree_Node_Pool_Size];
+    traversal_node Nodes[Game_Tree_Node_Pool_Size];
 } traversal;
 
 #define Move_History_Size 256
@@ -476,7 +477,6 @@ typedef struct
     game_tree GameTreeRoot; /* TODO: Make GameTreeRoot a pointer and allocate it from the same pool as GameTreeCurrent and FreeGameTree. */
     game_tree *GameTreeCurrent;
     game_tree *FreeGameTree;
-    game_tree *SortGameTree;
 
     move_history MoveHistory;
 
@@ -492,8 +492,8 @@ typedef struct
     Vector2 DisplayNodeCameraPosition;
 
     traversal GenerationTraversal;
+    traversal SortTraversal;
     traversal_node TraversalNodes[Game_Tree_Node_Pool_Size];
-    traversal_node SortTraversal[Game_Tree_Node_Pool_Size];
 
     evaluation Evaluation;
 
@@ -1072,7 +1072,7 @@ internal traversal_result TraverseFirstChild(app_state *AppState, traversal Trav
 
     if (Result.GameTreeIndex >= 0 && Result.GameTreeIndex < Game_Tree_Node_Pool_Size)
     {
-        traversal_node *TraversalNode = Traversal.TraversalNodes + Result.GameTreeIndex;
+        traversal_node *TraversalNode = Traversal.Nodes + Result.GameTreeIndex;
 
         if (!TraversalNode->Visited)
         {
@@ -1253,6 +1253,11 @@ internal game_tree *GetRootGameTree(game_tree *GameTree)
         while(Root->Parent)
         {
             Root = Root->Parent;
+        }
+
+        while(Root->PreviousSibling)
+        {
+            Root = Root->PreviousSibling;
         }
     }
 
@@ -1939,7 +1944,7 @@ internal void GenerateAllPotentials(app_state *AppState)
     traversal *Traversal = &AppState->GenerationTraversal;
 
     game_tree *OldGameTreeCurrent = AppState->GameTreeCurrent;
-    game_tree *CurrentRoot = GetRootGameTree(Traversal->CurrentNode);
+    game_tree *CurrentRoot = GetRootGameTree(Traversal->CurrentNode); /* TODO: Don't search for the root, and instead, whenever a move is made and there is a new root, reset all the traversals. */
 
     s32 ProcessedNodeCount = 0;
     s32 MaxNodesToBeProcessed = 2*1024;
@@ -1974,18 +1979,18 @@ internal void GenerateAllPotentials(app_state *AppState)
             if (!Traversal->CurrentNode->FirstChild)
             {
                 Traversal->CurrentNode = Traversal->CurrentNode->NextSibling;
-                Traversal->TraversalNodes[CurrentNodeIndex].Visited = 1; /* TODO: This is the same kind of motion as the sibling move below, and I _think_ we want to set the current node as "visited" here as well. */
+                Traversal->Nodes[CurrentNodeIndex].Visited = 1; /* TODO: This is the same kind of motion as the sibling move below, and I _think_ we want to set the current node as "visited" here as well. */
             }
+        }
+        else if (NextSiblingTraversal.GameTree)
+        {
+            Traversal->CurrentNode = Traversal->CurrentNode->NextSibling;
+            Traversal->Nodes[CurrentNodeIndex].Visited = 1; /* TODO: The visited value should probably be set by TraverseFirstChild/NextSibling */
         }
         else if (FirstChildTraversal.GameTree && Traversal->Depth < Traversal->MaxDepth)
         {
             Traversal->CurrentNode = Traversal->CurrentNode->FirstChild;
             Traversal->Depth += 1;
-        }
-        else if (NextSiblingTraversal.GameTree)
-        {
-            Traversal->CurrentNode = Traversal->CurrentNode->NextSibling;
-            Traversal->TraversalNodes[CurrentNodeIndex].Visited = 1; /* TODO: The visited value should probably be set by TraverseFirstChild/NextSibling */
         }
         else
         {
@@ -1995,11 +2000,11 @@ internal void GenerateAllPotentials(app_state *AppState)
             if (Traversal->Depth == 0)
             {
                 s32 NewMaxDepth = (Traversal->MaxDepth + 1) % MAX_DEPTH;
-                ClearTraversals(AppState, Traversal->TraversalNodes);
+                ClearTraversals(AppState, Traversal->Nodes);
                 Traversal->MaxDepth = NewMaxDepth;
             }
 
-            Traversal->TraversalNodes[CurrentNodeIndex].Visited = 1;
+            Traversal->Nodes[CurrentNodeIndex].Visited = 1;
         }
 
         ProcessedNodeCount += 1;
@@ -2387,21 +2392,24 @@ internal void LoadMoveHistory(app_state *AppState)
 {
     FILE *File = fopen("./chess_bot_save.bgs", "rb");
 
-    fread(&AppState->MoveHistory, 1, sizeof(AppState->MoveHistory), File);
-
-    if(AppState->MoveHistory.Index >= 0 && AppState->MoveHistory.Index < Move_History_Size)
+    if (File)
     {
-        for (s32 I = 0; I < AppState->MoveHistory.Index; ++I)
+        fread(&AppState->MoveHistory, 1, sizeof(AppState->MoveHistory), File);
+
+        if(AppState->MoveHistory.Index >= 0 && AppState->MoveHistory.Index < Move_History_Size)
         {
-            AppState->CurrentMove = AppState->MoveHistory.Moves[I];
+            for (s32 I = 0; I < AppState->MoveHistory.Index; ++I)
+            {
+                AppState->CurrentMove = AppState->MoveHistory.Moves[I];
 
-            AppState->Ui.SelectedSquare = RowColFromSquare(AppState->CurrentMove.BeginSquare);
-            AppState->Ui.MoveSquare = RowColFromSquare(AppState->CurrentMove.EndSquare);
-            HandleMove(AppState);
+                AppState->Ui.SelectedSquare = RowColFromSquare(AppState->CurrentMove.BeginSquare);
+                AppState->Ui.MoveSquare = RowColFromSquare(AppState->CurrentMove.EndSquare);
+                HandleMove(AppState);
+            }
         }
-    }
 
-    fclose(File);
+        fclose(File);
+    }
 }
 
 internal void HandleUserInput(app_state *AppState)
@@ -2797,6 +2805,7 @@ internal void InitializeEvaluation(app_state *AppState)
 internal void SwapGameTreeSiblings(game_tree *NodeA, game_tree *NodeB)
 {
     Assert(NodeA != 0 && NodeB != 0);
+    Assert(NodeA != NodeB);
     Assert(NodeA->NextSibling == NodeB);
     Assert(NodeB->PreviousSibling == NodeA);
 
@@ -2833,47 +2842,45 @@ internal void IncrementallySortGameTree(app_state *AppState)
         return;
     }
 
-    game_tree *CurrentRoot = GetRootGameTree(AppState->SortGameTree);
+    traversal *Traversal = &AppState->SortTraversal;
+    game_tree *CurrentRoot = GetRootGameTree(Traversal->CurrentNode);
 
-    if (CurrentRoot == AppState->FreeGameTree || !AppState->SortGameTree)
+    if (CurrentRoot == AppState->FreeGameTree || Traversal->CurrentNode == 0)
     {
-        AppState->SortGameTree = AppState->GameTreeRoot.FirstChild;
-        CurrentRoot = AppState->SortGameTree;
-        ClearTraversals(AppState, AppState->SortTraversal);
+        Traversal->CurrentNode = AppState->GameTreeRoot.FirstChild;
+        ClearTraversals(AppState, AppState->SortTraversal.Nodes);
     }
 
-    s32 MaxTraversalCount = 2*1024;
+    s32 MaxTraversalCount = 1*1024;
     s32 TraversalCount = 0;
 
-    s32 DebugCount = 0;
-
-    while (AppState->SortGameTree && TraversalCount < MaxTraversalCount)
+    while (Traversal->CurrentNode && TraversalCount < MaxTraversalCount)
     {
-        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, AppState->SortGameTree);
+        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, Traversal->CurrentNode);
 
-        traversal_result FirstChildTraversal = Old_TraverseFirstChild(AppState, AppState->SortTraversal, AppState->SortGameTree);
-        traversal_result NextSiblingTraversal = Old_TraverseNextSibling(AppState, AppState->SortGameTree);
-        game_tree *SwapNode = AppState->SortGameTree;
+        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, AppState->SortTraversal);
+        traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, AppState->SortTraversal);
+        game_tree *SwapNode = Traversal->CurrentNode;
 
         b32 ShouldSwap = 0;
 
         if (FirstChildTraversal.GameTree)
         {
-            AppState->SortGameTree = AppState->SortGameTree->FirstChild;
+            Traversal->CurrentNode = Traversal->CurrentNode->FirstChild;
             TraversalCount += 1;
         }
         else if (NextSiblingTraversal.GameTree)
         {
             ShouldSwap = 1;
-            AppState->SortGameTree = AppState->SortGameTree->NextSibling;
-            AppState->SortTraversal[CurrentNodeIndex].Visited = 1; /* TODO: The visited value should probably be set by Old_TraverseFirstChild/NextSibling */
+            Traversal->CurrentNode = Traversal->CurrentNode->NextSibling;
+            AppState->SortTraversal.Nodes[CurrentNodeIndex].Visited = 1; /* TODO: The visited value should probably be set by Old_TraverseFirstChild/NextSibling */
             TraversalCount += 1;
         }
         else
         {
             ShouldSwap = 1;
-            AppState->SortGameTree = AppState->SortGameTree->Parent;
-            AppState->SortTraversal[CurrentNodeIndex].Visited = 1;
+            Traversal->CurrentNode = Traversal->CurrentNode->Parent;
+            AppState->SortTraversal.Nodes[CurrentNodeIndex].Visited = 1;
         }
 
         if (ShouldSwap && SwapNode && SwapNode->PreviousSibling)
@@ -3183,7 +3190,7 @@ int main(void)
         DrawGameTree(&AppState);
         { /* NOTE: Draw if the bot is currently allowed to make moves. */
             b32 BotCanNotMakeAMove = Get_Flag(AppState.Flags, app_state_flags_DoNotLetTheBotMakeAMove);
-            char *Message = BotCanNotMakeAMove ? "Bot paused" : "Bot is playing" ;
+            char *Message = BotCanNotMakeAMove ? "Bot paused" : "Bot is playing";
             Color TextColor = BotCanNotMakeAMove ? (Color){26, 40, 26, 255}: (Color){20, 90, 20, 255};
             DrawText(Message, 0.5f*SCREEN_WIDTH, 4.0f, 16.0f, TextColor);
         }
