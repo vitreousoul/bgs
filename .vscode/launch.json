@@ -21,5 +21,17 @@
             "externalConsole": false,
             "MIMode": "lldb"
         },
+        {
+            "name": "(lldb) Optimized",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/chess_bot.exe",
+            "args": ["preprocess"],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb"
+        },
     ]
 }
