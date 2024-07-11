@@ -1028,6 +1028,8 @@ internal void ClearTraversals(app_state *AppState, traversal_node *TraversalNode
     }
 }
 
+#define Get_Game_Tree_Index_From_Pointer(as, gt) (s32)((gt) - (as)->GameTreeNodePool)
+
 internal s32 GetGameTreeIndexFromPointer(app_state *AppState, game_tree *GameTree)
 {
     s32 Index = (s32)(GameTree - AppState->GameTreeNodePool);
@@ -1038,14 +1040,12 @@ internal s32 GetGameTreeIndexFromPointer(app_state *AppState, game_tree *GameTre
 /* TODO: Delete Old_TraverseFirstChild and use TraverseFirstChild. */
 internal traversal_result Old_TraverseFirstChild(app_state *AppState, traversal_node *TraversalNodes, game_tree *GameTree)
 {
-    traversal_result Result = {0};
+    traversal_result Result;
     Result.GameTreeIndex = GetGameTreeIndexFromPointer(AppState, GameTree->FirstChild);
 
     if (Is_Game_Tree_Index_In_Range(Result.GameTreeIndex))
     {
-        traversal_node *TraversalNode = TraversalNodes + Result.GameTreeIndex;
-
-        if (TraversalNode->Visited)
+        if (TraversalNodes[Result.GameTreeIndex].Visited)
         {
             Result.GameTreeIndex = -1;
         }
@@ -1065,14 +1065,12 @@ internal traversal_result Old_TraverseNextSibling(app_state *AppState, game_tree
 
 internal traversal_result TraverseFirstChild(app_state *AppState, traversal Traversal)
 {
-    traversal_result Result = {0};
-    Result.GameTreeIndex = GetGameTreeIndexFromPointer(AppState, Traversal.CurrentNode->FirstChild);
+    traversal_result Result;
+    Result.GameTreeIndex = (s32)(Traversal.CurrentNode->FirstChild - AppState->GameTreeNodePool);
 
     if (Is_Game_Tree_Index_In_Range(Result.GameTreeIndex))
     {
-        traversal_node *TraversalNode = Traversal.Nodes + Result.GameTreeIndex;
-
-        if (TraversalNode->Visited)
+        if (Traversal.Nodes[Result.GameTreeIndex].Visited)
         {
             Result.GameTreeIndex = -1;
         }
@@ -2859,20 +2857,17 @@ internal void IncrementallySortGameTree(app_state *AppState)
 
     s32 MaxTraversalCount = 1*1024;
     s32 TraversalCount = 0;
+    s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, Traversal->CurrentNode);
 
     while (Traversal->CurrentNode && TraversalCount < MaxTraversalCount)
     {
-        s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, Traversal->CurrentNode);
-
-        ryn_BEGIN_TIMED_BLOCK(timed_block_InnerSortClears);
-        traversal_result FirstChildTraversal = TraverseFirstChild(AppState, AppState->SortTraversal);
-        ryn_END_TIMED_BLOCK(timed_block_InnerSortClears);
+        s32 FirstChildIndex = Get_Game_Tree_Index_From_Pointer(AppState, Traversal->CurrentNode->FirstChild);
         traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, AppState->SortTraversal);
         game_tree *SwapNode = Traversal->CurrentNode;
 
         b32 ShouldSwap = 0;
 
-        if (Is_Game_Tree_Index_In_Range(FirstChildTraversal.GameTreeIndex))
+        if (Is_Game_Tree_Index_In_Range(FirstChildIndex) && !Traversal->Nodes[FirstChildIndex].Visited)
         {
             Traversal->CurrentNode = Traversal->CurrentNode->FirstChild;
             TraversalCount += 1;
