@@ -4,6 +4,7 @@
         TODO: A promoted pawn continues to allow promotion when on the back row, we need to check pawn-promotion of pawns before allowing more promotion moves.
 
     Engine Functionality:
+        TODO: We should try evaluating all the game-tree nodes first, then running the sorting pass by sorting all siblings at once.
         TODO: Instead of searching to see if a traversal is still in the active game-tree, maybe we should reset all traversals when a move is made (when we make a new game-tree the root).
         TODO: Make UpdateDisplayNodes incremental (this should hopefully help with performance).
         TODO: Create game_state valuing functions.
@@ -421,7 +422,7 @@ typedef struct
     ui_color_theme Theme;
 } ui;
 
-#define Game_Tree_Node_Pool_Size (12*1024) /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
+#define Game_Tree_Node_Pool_Size (32*1024) /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
 
 #define Is_Game_Tree_Index_In_Range(i) ((i) >= 0 && (i) < Game_Tree_Node_Pool_Size)
 
@@ -2524,8 +2525,8 @@ internal void DrawPiece(app_state *AppState, piece Piece, f32 X, f32 Y)
 internal f32 GetGameTreeAdjustedScore(game_tree *GameTree)
 {
     /* f32 Score = 0.5f * (GameTree->Score + GameTree->WorstFollowingMoveScore); */
-    f32 Score = 0.2f*GameTree->Score + 0.8f*GameTree->WorstFollowingMoveScore;
-    /* f32 Score = GameTree->WorstFollowingMoveScore; */
+    f32 Score = GameTree->WorstFollowingMoveScore;
+    /* f32 Score = 0.2f*GameTree->Score + 0.8f*GameTree->WorstFollowingMoveScore; */
     return Score;
 }
 
@@ -2838,6 +2839,66 @@ internal void SwapGameTreeSiblings(game_tree *NodeA, game_tree *NodeB)
     }
 }
 
+#define Is_Traversable(traversal, index) (Is_Game_Tree_Index_In_Range(index) && \
+                                          !(traversal)->Nodes[index].Visited)
+
+internal b32 SortGameTreeChildren(app_state *AppState, game_tree *GameTree)
+{
+    Assert(GameTree->FirstChild != 0);
+    b32 SortingOccured = 0;
+    b32 SortDirection = 0;
+
+    game_tree *CurrentNode = GameTree->FirstChild;
+    game_tree *PreviousNode;
+    game_tree *NextNode;
+    game_tree *NewCurrentNodeForNextIteration;
+
+    for (;;)
+    {
+        if (SortDirection)
+        {
+            NextNode = CurrentNode;
+            PreviousNode = CurrentNode->PreviousSibling;
+            NewCurrentNodeForNextIteration = PreviousNode;
+        }
+        else
+        {
+            NextNode = CurrentNode->NextSibling;
+            PreviousNode = CurrentNode;
+            NewCurrentNodeForNextIteration = NextNode;
+        }
+
+        if (NextNode == 0 || PreviousNode == 0)
+        {
+            if (!SortingOccured)
+            {
+                break;
+            }
+
+            SortDirection = !SortDirection;
+            SortingOccured = 0;
+            NewCurrentNodeForNextIteration = CurrentNode;
+        }
+        else
+        {
+            f32 PreviousScore = GetGameTreeAdjustedScore(PreviousNode);
+            f32 NextScore = GetGameTreeAdjustedScore(NextNode);
+
+            b32 CurrentIsBest = CheckIfCurrentIsBestScore(AppState, PreviousScore, NextScore);
+
+            if (CurrentIsBest)
+            {
+                SortingOccured = 1;
+                SwapGameTreeSiblings(PreviousNode, NextNode);
+            }
+        }
+
+        CurrentNode = NewCurrentNodeForNextIteration;
+    }
+
+    return SortingOccured;
+}
+
 internal void IncrementallySortGameTree(app_state *AppState)
 {
     ryn_BEGIN_TIMED_BLOCK(timed_block_IncrementallySortGameTree);
@@ -2855,48 +2916,30 @@ internal void IncrementallySortGameTree(app_state *AppState)
         ClearTraversals(AppState, AppState->SortTraversal.Nodes);
     }
 
-    s32 MaxTraversalCount = 1*1024;
+    s32 MaxTraversalCount = 64;
     s32 TraversalCount = 0;
     s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, Traversal->CurrentNode);
 
     while (Traversal->CurrentNode && TraversalCount < MaxTraversalCount)
     {
+        s32 CurrentNodeIndex = Get_Game_Tree_Index_From_Pointer(AppState, Traversal->CurrentNode);
         s32 FirstChildIndex = Get_Game_Tree_Index_From_Pointer(AppState, Traversal->CurrentNode->FirstChild);
-        traversal_result NextSiblingTraversal = TraverseNextSibling(AppState, AppState->SortTraversal);
-        game_tree *SwapNode = Traversal->CurrentNode;
+        s32 NextSiblingIndex = Get_Game_Tree_Index_From_Pointer(AppState, Traversal->CurrentNode->NextSibling);
 
-        b32 ShouldSwap = 0;
-
-        if (Is_Game_Tree_Index_In_Range(FirstChildIndex) && !Traversal->Nodes[FirstChildIndex].Visited)
+        if (Is_Traversable(Traversal, FirstChildIndex))
         {
+            SortGameTreeChildren(AppState, Traversal->CurrentNode);
             Traversal->CurrentNode = Traversal->CurrentNode->FirstChild;
-            TraversalCount += 1;
         }
-        else if (Is_Game_Tree_Index_In_Range(NextSiblingTraversal.GameTreeIndex))
+        else if (Is_Traversable(Traversal, NextSiblingIndex))
         {
-            ShouldSwap = 1;
             Traversal->CurrentNode = Traversal->CurrentNode->NextSibling;
             SetTraversalAsVisited(AppState->SortTraversal.Nodes, CurrentNodeIndex);
-            TraversalCount += 1;
         }
         else
         {
-            ShouldSwap = 1;
             Traversal->CurrentNode = Traversal->CurrentNode->Parent;
             SetTraversalAsVisited(AppState->SortTraversal.Nodes, CurrentNodeIndex);
-        }
-
-        if (ShouldSwap && SwapNode && SwapNode->PreviousSibling)
-        {
-            f32 PreviousScore = GetGameTreeAdjustedScore(SwapNode->PreviousSibling);
-            f32 CurrentScore = GetGameTreeAdjustedScore(SwapNode);
-
-            b32 CurrentIsBest = CheckIfCurrentIsBestScore(AppState, PreviousScore, CurrentScore);
-
-            if (CurrentIsBest)
-            {
-                SwapGameTreeSiblings(SwapNode->PreviousSibling, SwapNode);
-            }
         }
     }
 
@@ -3115,7 +3158,7 @@ int main(void)
     InitializeGameState(&AppState.RootGameTree->State);
     InitializeSquares(AppState.Squares, &AppState.RootGameTree->State);
     InitializeEvaluation(&AppState);
-    AppState.BotTicksPerMove = 80;//64;
+    AppState.BotTicksPerMove = 64;
     AppState.UserInputMode = user_input_mode_TheUsersTurn;
 
 #if 0

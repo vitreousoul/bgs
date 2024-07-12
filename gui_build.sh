@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-DEBUG=0
+DEBUG=1
 
 if [ -z "$1" ]; then
     TARGET_NAME="gui_app";
@@ -13,7 +13,7 @@ fi
 
 if [ $DEBUG -eq 0 ]; then
     echo "Optimized build";
-    TARGET="-g -O2 -DDEBUG=0 -o $TARGET_NAME.exe"
+    TARGET="-O2 -DDEBUG=0 -o $TARGET_NAME.exe"
 elif [ $DEBUG -eq 1 ]; then
     echo "Debug build";
     TARGET="-g3 -O0 -DDEBUG=1 -o $TARGET_NAME.out"
