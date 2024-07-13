@@ -14,6 +14,11 @@ TODO Features:
        - Need a way to deal with promotion
     - Generate FEN for each position. Ask user if they want to save the FEN
       log and game info to a log file upon quitting
+    - Need to change user_move validation to where  you generate the list of legal 
+      moves and compare the user's move to that.
+      Also make the request for validity occur outside of move(), move() should just
+      do it. That way it's not being validated twice every time you call the move() command
+      for computer moves.
 
 TODO Misc.:
     - Reduce hard coded values? Numpbers representing each piece, etc.
@@ -40,6 +45,11 @@ class Board:
     BOARD_SIZE = 8
     ASCII_lowA = 97
     ASCII_lowH = 104
+    WHITE_PIECES = ("P","R","N","B","Q","K")
+    BLACK_PIECES = ("p","r","n","b","q","k")
+    PIECE_VALUES = [1,5,3,3,9,0]
+    #TODO: try first assigning a zero value to king (might want to use high value
+    #   to help with checkmate)
     
     """
     Constructor for Board class
@@ -62,8 +72,8 @@ class Board:
         # else:
             # TODO: Throw error: Too many input arguments
         self.FEN_LOG = [self.START_FEN]
-        
         self.parse_fen()
+        self.material_count = self.count_material()
     
     """
     Defines / returns string representation of a Board for printing
@@ -164,6 +174,23 @@ class Board:
         Starts at 1 and increments after black's move'
         """
         self.fm_clock = int(split_fen[5])
+        
+    #TODO: If it ends up being too slow to do this every time, consider just
+    #      evaluating material after captures
+    def count_material(self):
+        
+        material_count = 0
+        for scan_rank in range(0,self.BOARD_SIZE):
+            for scan_file in range(0,self.BOARD_SIZE):
+                temp_square = self.board_state[scan_rank,scan_file].decode()
+                if temp_square in self.WHITE_PIECES:
+                    idx = self.WHITE_PIECES.index(temp_square)
+                    material_count += self.PIECE_VALUES[idx]
+                elif temp_square in self.BLACK_PIECES:
+                    idx = self.BLACK_PIECES.index(temp_square)
+                    material_count -= self.PIECE_VALUES[idx]
+        return material_count
+                    
             
     def move(self,user_move):
             
@@ -202,7 +229,6 @@ class Board:
         r1 = int(r1) - 1
         r2 = int(r2) - 1
         
-        # TODO: This is also defined elsewhere
         rank_diff = r2 - r1
         file_diff = f2 - f1
         
@@ -217,6 +243,7 @@ class Board:
             
         # TODO: Validate Move
         # If it passes the test as a valid move, execute
+        # TODO: Need to do this the new way where you generate the list of legal moves and compare the user's move to that.
         if not self.validate_move(r1,f1,r2,f2):
             # print('Error: Invalid move. Please try again.\n')
             return 1
@@ -297,6 +324,7 @@ class Board:
                     
             self.board_state[r2,f2] = self.board_state[r1,f1]
             self.board_state[r1,f1] = ''
+            self.material_count = self.count_material()
             
         # TODO: Update the following params accordingly
         # - Who's move indicator
@@ -317,9 +345,9 @@ class Board:
         Check that you're not trying to capture your own piece'
         """
         if self.white_to_move:
-            friend_list = ("P","R","N","B","Q","K")
+            friend_list = self.WHITE_PIECES
         else:
-            friend_list = ("p","r","n","b","q","k")
+            friend_list = self.BLACK_PIECES
         if self.board_state[r2,f2].decode() in friend_list:
             return False
 
@@ -536,10 +564,10 @@ class Board:
     def get_valid_moves(self):
         valid_moves = []
         if self.white_to_move:
-            friend_list = ("P","R","N","B","Q","K")
+            friend_list = self.WHITE_PIECES
             pawn_direction = 1
         else:
-            friend_list = ("p","r","n","b","q","k")
+            friend_list = self.BLACK_PIECES
             pawn_direction = -1
             
         for scan_rank in range(0,self.BOARD_SIZE):

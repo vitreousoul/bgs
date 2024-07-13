@@ -32,10 +32,10 @@ No bugs found
 
 
 # Pawn promotion test
-board = Board('8/6P1/4k3/8/3K4/8/8/8 w - - 0 1')
+#board = Board('8/6P1/4k3/8/3K4/8/8/8 w - - 0 1')
 
 
-# board = Board('r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4')
+board = Board('r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4')
 # Castling test
 # board = Board('r3k2r/pppqbppp/2npbn2/4p3/2B1P3/P1NPBN2/1PPQ1PPP/R3K2R w KQkq - 1 9')
 # En passant test
