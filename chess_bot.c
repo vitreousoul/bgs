@@ -4,9 +4,9 @@
         TODO: A promoted pawn continues to allow promotion when on the back row, we need to check pawn-promotion of pawns before allowing more promotion moves.
 
     Engine Functionality:
+        TODO: The bot should wait until everything is sorted, or some other metric, instead of waiting a specified amount of time each turn.
         TODO: We should try evaluating all the game-tree nodes first, then running the sorting pass by sorting all siblings at once.
         TODO: Instead of searching to see if a traversal is still in the active game-tree, maybe we should reset all traversals when a move is made (when we make a new game-tree the root).
-        TODO: Make UpdateDisplayNodes incremental (this should hopefully help with performance).
         TODO: Create game_state valuing functions.
 
     GUI:
@@ -26,15 +26,14 @@
 
 typedef enum
 {
+    timed_block_Main,
     timed_block_DrawBoard,
     timed_block_DrawGameTree,
+    timed_block_GenerateAllPotentials,
     timed_block_IncrementallySortGameTree,
-    timed_block_InnerSortClears,
     timed_block_UpdateDisplayNodes,
     timed_block_HandleInputAndMove,
     timed_block_BeginAndClear,
-    timed_block_TestingSomethingHere,
-    timed_block_TraverseFirstChild,
 } timed_block_kind;
 
 #define u8   uint8_t
@@ -422,7 +421,7 @@ typedef struct
     ui_color_theme Theme;
 } ui;
 
-#define Game_Tree_Node_Pool_Size (32*1024) /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
+#define Game_Tree_Node_Pool_Size (38*1024) /* TODO: Use index types for indexing arrays of Game_Tree_Node_Pool_Size */
 
 #define Is_Game_Tree_Index_In_Range(i) ((i) >= 0 && (i) < Game_Tree_Node_Pool_Size)
 
@@ -491,6 +490,7 @@ typedef struct
     u8 Squares[64];
     game_tree GameTreeNodePool[Game_Tree_Node_Pool_Size];
     s32 GameTreeNodePoolIndex;
+    s32 DrawGameTreeIndex;
 
     display_node DisplayNodes[Game_Tree_Node_Pool_Size];
     Vector2 DisplayNodeCameraPosition;
@@ -1953,6 +1953,7 @@ internal void GeneratePotentials(app_state *AppState, game_state *GameState)
 
 internal void GenerateAllPotentials(app_state *AppState)
 {
+    ryn_BEGIN_TIMED_BLOCK(timed_block_GenerateAllPotentials);
     traversal *Traversal = &AppState->GenerationTraversal;
 
     game_tree *OldGameTreeCurrent = AppState->GameTreeCurrent;
@@ -2019,6 +2020,7 @@ internal void GenerateAllPotentials(app_state *AppState)
     }
 
     AppState->GameTreeCurrent = OldGameTreeCurrent;
+    ryn_END_TIMED_BLOCK(timed_block_GenerateAllPotentials);
 }
 
 internal void InitializeGameState(game_state *GameState)
@@ -2712,6 +2714,7 @@ internal void DrawPawnPromotionBoard(app_state *AppState)
 
 internal void DrawGameTree(app_state *AppState)
 {
+    return;
     ryn_BEGIN_TIMED_BLOCK(timed_block_DrawGameTree);
     Vector2 CameraPosition = AppState->DisplayNodeCameraPosition;
     s32 Index = GetGameTreeIndexFromPointer(AppState, AppState->GameTreeCurrent);
@@ -2735,12 +2738,17 @@ internal void DrawGameTree(app_state *AppState)
             DrawCircle(Position.x, Position.y, Size, ActiveColor);
         }
 
-        for (s32 I = 0; I < Game_Tree_Node_Pool_Size; ++I)
+        s32 Count = 0;
+
+        for (s32 *I = &AppState->DrawGameTreeIndex;
+             *I < Game_Tree_Node_Pool_Size && Count < 1024;
+             *I = (*I + 1) % Game_Tree_Node_Pool_Size)
         {
-            ryn_BEGIN_TIMED_BLOCK(timed_block_TestingSomethingHere);
-            display_node DisplayNode = AppState->DisplayNodes[I];
-            game_tree *GameTree = AppState->GameTreeNodePool + I;
+            display_node DisplayNode = AppState->DisplayNodes[*I];
+            game_tree *GameTree = AppState->GameTreeNodePool + *I;
             b32 IsCurrentGameTree = GameTree == AppState->GameTreeCurrent;
+            Count += 1;
+            printf("draw index %d\n", *I);
 
             if (DisplayNode.Visible)
             {
@@ -2751,7 +2759,7 @@ internal void DrawGameTree(app_state *AppState)
 
                 if (PositionIsInBounds)
                 {
-                    b32 IsCurrentNode = (AppState->GameTreeNodePool + I) == AppState->GameTreeCurrent;
+                    b32 IsCurrentNode = (AppState->GameTreeNodePool + *I) == AppState->GameTreeCurrent;
                     f32 ScoreRange = 10.0f;
                     f32 Score = GetGameTreeAdjustedScore(GameTree);
                     f32 ClampedGameStateScore = ClampF32(Score, -ScoreRange, ScoreRange);
@@ -2767,7 +2775,6 @@ internal void DrawGameTree(app_state *AppState)
                     DrawCircle(Position.x, Position.y, Size, NodeColor);
                 }
             }
-            ryn_END_TIMED_BLOCK(timed_block_TestingSomethingHere);
         }
     }
     ryn_END_TIMED_BLOCK(timed_block_DrawGameTree);
@@ -2847,11 +2854,12 @@ internal void SwapGameTreeSiblings(game_tree *NodeA, game_tree *NodeB)
 #define Is_Traversable(traversal, index) (Is_Game_Tree_Index_In_Range(index) && \
                                           !(traversal)->Nodes[index].Visited)
 
-internal b32 SortGameTreeChildren(app_state *AppState, game_tree *GameTree)
+internal s32 SortGameTreeChildren(app_state *AppState, game_tree *GameTree)
 {
     Assert(GameTree->FirstChild != 0);
     b32 SortingOccured = 0;
     b32 SortDirection = 0;
+    s32 SwapCount = 0;
 
     game_tree *CurrentNode = GameTree->FirstChild;
     game_tree *PreviousNode;
@@ -2894,6 +2902,7 @@ internal b32 SortGameTreeChildren(app_state *AppState, game_tree *GameTree)
             if (CurrentIsBest)
             {
                 SortingOccured = 1;
+                SwapCount += 1;
                 SwapGameTreeSiblings(PreviousNode, NextNode);
             }
         }
@@ -2901,7 +2910,7 @@ internal b32 SortGameTreeChildren(app_state *AppState, game_tree *GameTree)
         CurrentNode = NewCurrentNodeForNextIteration;
     }
 
-    return SortingOccured;
+    return SwapCount;
 }
 
 internal void IncrementallySortGameTree(app_state *AppState)
@@ -2921,9 +2930,11 @@ internal void IncrementallySortGameTree(app_state *AppState)
         ClearTraversals(AppState, AppState->SortTraversal.Nodes);
     }
 
-    s32 MaxTraversalCount = 64;
+    s32 MaxTraversalCount = 1024;
     s32 TraversalCount = 0;
     s32 CurrentNodeIndex = GetGameTreeIndexFromPointer(AppState, Traversal->CurrentNode);
+
+    s32 SortCount = 0;
 
     while (Traversal->CurrentNode && TraversalCount < MaxTraversalCount)
     {
@@ -2935,7 +2946,8 @@ internal void IncrementallySortGameTree(app_state *AppState)
 
         if (Is_Traversable(Traversal, FirstChildIndex))
         {
-            SortGameTreeChildren(AppState, Traversal->CurrentNode);
+            b32 SortingOccured = SortGameTreeChildren(AppState, Traversal->CurrentNode);
+            if (SortingOccured) SortCount += 1;
             Traversal->CurrentNode = Traversal->CurrentNode->FirstChild;
         }
         else if (Is_Traversable(Traversal, NextSiblingIndex))
@@ -2949,6 +2961,7 @@ internal void IncrementallySortGameTree(app_state *AppState)
             SetTraversalAsVisited(AppState->SortTraversal.Nodes, CurrentNodeIndex);
         }
     }
+    printf("Sort count %d\n", SortCount);
 
     { /* TODO: delete this debug code */
         char Buff[64];
@@ -3161,7 +3174,7 @@ internal void InitAppState(app_state *AppState)
     InitializeGameState(&AppState->RootGameTree->State);
     InitializeSquares(AppState->Squares, &AppState->RootGameTree->State);
     InitializeEvaluation(AppState);
-    AppState->BotTicksPerMove = 64;
+    AppState->BotTicksPerMove = 256;//64;
     AppState->UserInputMode = user_input_mode_TheUsersTurn;
 
 #if 0
@@ -3197,7 +3210,7 @@ int main(void)
         return 1;
     }
 
-    app_state AppState;
+    app_state AppState = {0};
     InitAppState(&AppState);
 
     b32 ShouldCopyDebugProfilerForPause = 0;
@@ -3205,6 +3218,8 @@ int main(void)
     while (!WindowShouldClose())
     {
         ryn_BeginProfile();
+
+        ryn_BEGIN_TIMED_BLOCK(timed_block_Main);
 
         /* TODO: @CodeQuality The logic to determine if it's the bot's turn is confusing. This could probably be phrased in a much better way. */
         b32 IsTheBotsTurn = CheckIfItsTheBotsTurn(&AppState);
@@ -3254,14 +3269,22 @@ int main(void)
         { /* NOTE: Draw if the bot is currently allowed to make moves. */
             b32 BotCanNotMakeAMove = Get_Flag(AppState.Flags, app_state_flags_DoNotLetTheBotMakeAMove);
             char *Message = BotCanNotMakeAMove ? "Bot paused" : "Bot is playing";
+            s32 TextWidth = MeasureText(Message, 16.0f);
             Color TextColor = BotCanNotMakeAMove ? (Color){26, 40, 26, 255}: (Color){20, 90, 20, 255};
-            DrawText(Message, 0.5f*SCREEN_WIDTH, 4.0f, 16.0f, TextColor);
+            DrawText(Message, 0.5f*(SCREEN_WIDTH - TextWidth), 4.0f, 16.0f, TextColor);
+        }
+        { /* NOTE: Debug viz of the bot's wait time, so you don't have to wonder... */
+            f32 Width = 120.0f;
+            f32 WaitRatio = (f32)AppState.BotMoveTick / AppState.BotTicksPerMove;
+            DrawRectangle(0.5f*SCREEN_WIDTH + 90.0f, 4.0f, Width, 12.0f, (Color){70, 70, 80, 255});
+            DrawRectangle(0.5f*SCREEN_WIDTH + 92.0f, 6.0f, WaitRatio*(Width-4.0f), 8.0f, (Color){70, 170, 80, 255});
         }
         if (AppState.UserInputMode == user_input_mode_PawnPromotion)
         {
             DrawPawnPromotionBoard(&AppState);
         }
         DebugDrawFreeTreeCount(&AppState);
+        ryn_END_TIMED_BLOCK(timed_block_Main);
 
         ryn_EndProfile();
         if (GlobalShowDebugPanel)
