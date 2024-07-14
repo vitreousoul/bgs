@@ -21,6 +21,7 @@ for i in range(SQUARE_PAIRS):
     all_moves[i,-3] = move_str[-3]
     all_moves[i,-4] = move_str[-4]
 
+board = Board('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
 # board = Board('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1')
 # board = Board('rnbqkbnr/pppp1ppp/8/4p3/4PP1q/8/PPPP2PP/RNBQKBNR w KQkq - 0 1')
 # board = Board('8/8/3k4/4r3/3K4/8/8/8 w - - 0 1')
@@ -97,7 +98,7 @@ Bugs - Fischer - Spassky Move 43 for black
 Bugs - Fischer - Spassky Move 43 for black
  - No bugs, 17 legal moves correctly identified 
 """
-# board = Board('8/8/4R1p1/2k3p1/1p4P1/1P1b1P2/3K1n2/8 b - - 2 43')
+#cboard = Board('8/8/4R1p1/2k3p1/1p4P1/1P1b1P2/3K1n2/8 b - - 2 43')
 
 
 """
@@ -169,7 +170,7 @@ Bugs - Endgame example - pawn promotion
 Bugs - Double check test
  - Black is in double check and only has one move - Correct
 """
-board = Board('r6r/2qknP1p/p5p1/1p2pB2/8/2P1B3/P1PR2PP/5RK1 b - - 2 22')
+#board = Board('r6r/2qknP1p/p5p1/1p2pB2/8/2P1B3/P1PR2PP/5RK1 b - - 2 22')
 
 """
 Bugs - Counter check test
@@ -180,11 +181,16 @@ Bugs - Counter check test
 # board = Board('8/6P1/8/8/1q1QK3/8/8/k7 b - - 1 1')
 
 valid_flag = np.zeros((SQUARE_PAIRS,1),dtype=bool)
+legal_moves = []
 for i in range(SQUARE_PAIRS):
     r1 = all_moves[i,0]
     f1 = all_moves[i,1]
     r2 = all_moves[i,2]
     f2 = all_moves[i,3]
+    
+    # Do something like this if it's too slow
+    move = x = "0x" + str(r1) + str(f1) + str(r2) + str(f2)
+    
     # if i == 1:
         # print("here")
     if board.validate_move(r1,f1,r2,f2):
@@ -192,7 +198,9 @@ for i in range(SQUARE_PAIRS):
         # I cannot figure out how to index all_moves to extract
         # the rows where valid_flag is true so I'm doing this instead.
         # all_moves[valid_flag, ...] ???
-        print(chr(f1+97) + str(r1+1) + " " + chr(f2+97) + str(r2+1))
+        # print(chr(f1+97) + str(r1+1) + " " + chr(f2+97) + str(r2+1))
+        legal_moves.append((chr(f1+97) + str(r1+1) + chr(f2+97) + str(r2+1)))
+        
     else:
         valid_flag[i] = 0
     

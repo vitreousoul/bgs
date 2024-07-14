@@ -14,6 +14,11 @@ TODO Features:
        - Need a way to deal with promotion
     - Generate FEN for each position. Ask user if they want to save the FEN
       log and game info to a log file upon quitting
+    - Need to change user_move validation to where  you generate the list of legal 
+      moves and compare the user's move to that.
+      Also make the request for validity occur outside of move(), move() should just
+      do it. That way it's not being validated twice every time you call the move() command
+      for computer moves.
 
 TODO Misc.:
     - Reduce hard coded values? Numpbers representing each piece, etc.
@@ -40,6 +45,11 @@ class Board:
     BOARD_SIZE = 8
     ASCII_lowA = 97
     ASCII_lowH = 104
+    WHITE_PIECES = ("P","R","N","B","Q","K")
+    BLACK_PIECES = ("p","r","n","b","q","k")
+    PIECE_VALUES = [1,5,3,3,9,0]
+    #TODO: try first assigning a zero value to king (might want to use high value
+    #   to help with checkmate)
     
     """
     Constructor for Board class
@@ -62,8 +72,8 @@ class Board:
         # else:
             # TODO: Throw error: Too many input arguments
         self.FEN_LOG = [self.START_FEN]
-        
         self.parse_fen()
+        self.material_count = self.count_material()
     
     """
     Defines / returns string representation of a Board for printing
@@ -164,6 +174,84 @@ class Board:
         Starts at 1 and increments after black's move'
         """
         self.fm_clock = int(split_fen[5])
+        
+    #TODO: If it ends up being too slow to do this every time, consider just
+    #      evaluating material after captures
+    def count_material(self):
+        material_count = 0
+        for scan_rank in range(0,self.BOARD_SIZE):
+            for scan_file in range(0,self.BOARD_SIZE):
+                temp_square = self.board_state[scan_rank,scan_file].decode()
+                if temp_square in self.WHITE_PIECES:
+                    idx = self.WHITE_PIECES.index(temp_square)
+                    material_count += self.PIECE_VALUES[idx]
+                elif temp_square in self.BLACK_PIECES:
+                    idx = self.BLACK_PIECES.index(temp_square)
+                    material_count -= self.PIECE_VALUES[idx]
+        return material_count
+    
+    # Space Count is a measure of the number of available moves that each side has into
+    #   the opponent's territory. Bonus points are awarded for available moves into the
+    #   center of the board.
+    # TODO: A better way to do this may be to incorporate it into the get_legal_moves
+    #       function so nothing the process isn't being repeated.
+    def count_space_center(self):
+        space_count = 0
+        # Scan through each square, looking for pieces
+        for scan_rank in range(0,self.BOARD_SIZE):
+            for scan_file in range(0,self.BOARD_SIZE):
+                temp_square = self.board_state[scan_rank,scan_file].decode()
+                # Identify the piece as white or black and assign parameters
+                # Also identify the type of piece based on the character
+                if temp_square in self.WHITE_PIECES:
+                    pawn_direction = 1
+                    space_increment = 1
+                    idx = self.WHITE_PIECES.index(temp_square)
+                    enemy_ranks = [5,6,7,8]
+                elif temp_square in self.BLACK_PIECES:
+                    pawn_direction = -1
+                    space_increment = -1
+                    idx = self.BLACK_PIECES.index(temp_square)
+                    enemy_ranks = [1,2,3,4]
+                else:
+                    break
+                
+                # With the type of piece identified, choose the correct scan_rays
+                #    parameters to identify legal moves for those pieces.
+                # Pawn moves
+                if idx == 0:
+                    valid_moves = self.scan_rays(scan_rank,scan_file,4,1,pawn_direction)
+                # Rook moves
+                elif idx == 1:
+                    valid_moves = self.scan_rays(scan_rank,scan_file,1,0,pawn_direction)
+                # Knight moves
+                elif idx == 2:
+                    valid_moves = self.scan_rays(scan_rank,scan_file,3,1,pawn_direction)
+                # Bishop moves
+                elif idx == 3:
+                    valid_moves = self.scan_rays(scan_rank,scan_file,2,0,pawn_direction)
+                # Queen moves
+                elif idx == 4:
+                    valid_moves = self.scan_rays(scan_rank,scan_file,1,0,pawn_direction)
+                    valid_moves += self.scan_rays(scan_rank,scan_file,2,0,pawn_direction)
+                # King moves
+                elif idx == 5:
+                    valid_moves = self.scan_rays(scan_rank,scan_file,1,1,pawn_direction)
+                    valid_moves += self.scan_rays(scan_rank,scan_file,2,1,pawn_direction)
+                
+                # Define the central squares for bonus points
+                central_ranks = [4,5]
+                central_files = [3,4,5,6]
+                # Loop through the legal moves for the current piece and identify which
+                #    ones are awarded points for space and central control.
+                for move in valid_moves:
+                    if ord(move[3]) in enemy_ranks:
+                        space_count += space_increment
+                    if (ord(move[3]) in central_ranks) and \
+                        ((ord(move[2])+self.ASCII_lowA) in central_files):
+                            space_count += space_increment
+                                    
+        return space_count                
             
     def move(self,user_move):
             
@@ -202,7 +290,6 @@ class Board:
         r1 = int(r1) - 1
         r2 = int(r2) - 1
         
-        # TODO: This is also defined elsewhere
         rank_diff = r2 - r1
         file_diff = f2 - f1
         
@@ -217,6 +304,7 @@ class Board:
             
         # TODO: Validate Move
         # If it passes the test as a valid move, execute
+        # TODO: Need to do this the new way where you generate the list of legal moves and compare the user's move to that.
         if not self.validate_move(r1,f1,r2,f2):
             # print('Error: Invalid move. Please try again.\n')
             return 1
@@ -297,6 +385,7 @@ class Board:
                     
             self.board_state[r2,f2] = self.board_state[r1,f1]
             self.board_state[r1,f1] = ''
+            self.material_count = self.count_material()
             
         # TODO: Update the following params accordingly
         # - Who's move indicator
@@ -317,9 +406,9 @@ class Board:
         Check that you're not trying to capture your own piece'
         """
         if self.white_to_move:
-            friend_list = ("P","R","N","B","Q","K")
+            friend_list = self.WHITE_PIECES
         else:
-            friend_list = ("p","r","n","b","q","k")
+            friend_list = self.BLACK_PIECES
         if self.board_state[r2,f2].decode() in friend_list:
             return False
 
@@ -536,10 +625,10 @@ class Board:
     def get_valid_moves(self):
         valid_moves = []
         if self.white_to_move:
-            friend_list = ("P","R","N","B","Q","K")
+            friend_list = self.WHITE_PIECES
             pawn_direction = 1
         else:
-            friend_list = ("p","r","n","b","q","k")
+            friend_list = self.BLACK_PIECES
             pawn_direction = -1
             
         for scan_rank in range(0,self.BOARD_SIZE):
@@ -601,7 +690,7 @@ class Board:
                 # If square is ocupied, break out of loop
                 if not self.board_state[r2,f2]:
                     break
-                # short_scan when onyl one move is permitted in each direction
+                # short_scan when only one move is permitted in each direction
                 if short_scan:
                     break
                 r2 += ray_dir[i][0]
