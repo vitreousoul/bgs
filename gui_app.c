@@ -1,10 +1,8 @@
 /* TODO: go though functions calls to the python lib, and if it requres a DECREF call, put the DECREF call in somewhere... */
 
-#define PY_SSIZE_T_CLEAN
-#include <Python.h>
-
 // NOTE: https://www.raylib.com/
 #include "./clibs/raylib.h"
+#include "./clibs/ryn_python.h"
 
 #include "./gui_app.h"
 
@@ -83,37 +81,6 @@ static PyObject *ErrorMessageAndPyObject(const char *message, PyObject *object)
 static int IVec2Equal(ivec2 A, ivec2 B)
 {
     return A.X == B.X && A.Y == B.Y;
-}
-
-static int InitPython(int argc, char **argv)
-{
-    /* copy-paste config stuff from docs */
-    PyStatus status;
-    PyConfig config;
-    PyConfig_InitPythonConfig(&config);
-    /* isolated means python cannot look at environement variables or something like that? */
-    config.isolated = 1;
-    /* the following config code is copy-pasta from docs, with gotos to shared cleanup code at end of function */
-    /* Decode command line arguments. Implicitly preinitialize Python (in isolated mode). */
-    status = PyConfig_SetBytesArgv(&config, argc, argv);
-    if (PyStatus_Exception(status)) goto exception;
-    status = Py_InitializeFromConfig(&config);
-    if (PyStatus_Exception(status)) goto exception;
-    PyConfig_Clear(&config);
-    // For some reason when python is embedded, the current directory is not added to sys.path,
-    // so we insert an empty string into sys.path, which will make python look at the current directory when importing modules.
-    // We have to add the local directory so that python can find our local modules.
-    PyRun_SimpleString("import sys");
-    PyRun_SimpleString("sys.path.insert(0,'')");
-    return 0;
-exception:
-    /* exception code copied from docs */
-    PyConfig_Clear(&config);
-    if (PyStatus_IsExit(status)) {
-        return status.exitcode;
-    }
-    /* Display the error message and exit the process with non-zero exit code */
-    Py_ExitStatusException(status);
 }
 
 static void PrintObjectChecks(PyObject *Object)
@@ -315,7 +282,7 @@ static void DrawBoard()
 
 int main(int argc, char **argv)
 {
-    int InitStatus = InitPython(argc, argv);
+    int InitStatus = InitPython();
     if (InitStatus) return ErrorMessageAndCode("Error initing python!\n", InitStatus);
     PyObject *Board = InitBoard();
     if (!Board) return ErrorMessageAndCode("Error initing Board\n", 1);

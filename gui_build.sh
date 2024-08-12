@@ -1,12 +1,19 @@
 #!/usr/bin/env sh
 
-DEBUG=1
+DEBUG=0
+
+GUI_APP_NAME="gui_app"
+
+PYTHON_LIBS_VALUE=`python3-config --cflags --ldflags --embed`
+
+TARGET_NAME="$1";
 
 if [ -z "$1" ]; then
     TARGET_NAME="gui_app";
-    PYTHON_LIBS=`python3-config --cflags --ldflags --embed`
+    PYTHON_LIBS="$PYTHON_LIBS_VALUE"
+elif [ "$1" == "gui_app" ] || [ "$1" == "chess_bot" ]; then
+    PYTHON_LIBS="$PYTHON_LIBS_VALUE"
 else
-    TARGET_NAME="$1";
     PYTHON_LIBS=""
 fi
 
